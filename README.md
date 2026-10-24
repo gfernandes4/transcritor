@@ -42,9 +42,11 @@ cd transcritor
 Windows (PowerShell):
 
 ```
-py -m venv .venv
+python -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
+
+(Se `python` não for reconhecido mas o Python estiver instalado, tente `py -m venv .venv`.)
 
 Linux ou macOS:
 
