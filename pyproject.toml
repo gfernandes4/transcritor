@@ -15,6 +15,8 @@ dependencies = ["faster-whisper>=1.1"]
 gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"]
 # Identificação de voz: sherpa-onnx roda os modelos ONNX; os modelos são baixados com `transcritor vozes baixar-modelo`.
 vozes = ["sherpa-onnx", "numpy"]
+# Transcrever direto de um link (YouTube e outros sites): baixa só o áudio com o yt-dlp.
+youtube = ["yt-dlp"]
 # O resumo usa só a biblioteca padrão: o Ollama é chamado por HTTP.
 resumo = []
 web = ["fastapi", "uvicorn", "python-multipart"]

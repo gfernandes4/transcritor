@@ -18,4 +18,6 @@ Avaliação feita em 23/10/2026 sobre a primeira versão (`pagina.html` de uma s
 
 Além das heurísticas: foco visível em todos os controles, alvos de toque de pelo menos 40 px, contraste conferido nos dois temas, texto de estado nunca só por cor, respeito a `prefers-reduced-motion`.
 
+**Links de vídeo e resumo (24/10/2026), pelas mesmas heurísticas:** o campo de links valida cada linha antes de enviar e diz qual linha está errada (5, prevenção de erros). A fila mostra a etapa em andamento: baixando, transcrevendo ou resumindo (1, visibilidade). Um link que falha vira aviso e o resto do envio segue; se o resumo falhar, a transcrição já está salva (9, recuperar de erros). Mensagens de erro do download dizem o que fazer, por exemplo enviar o arquivo no lugar do link quando o YouTube pede verificação anti-robô. "Resumir depois" fica desligada, com o motivo, quando o Ollama não está aberto (6, reconhecer em vez de lembrar).
+
 Tudo é servido localmente: nenhuma fonte, script ou imagem vem de CDN, o que preserva a promessa "os áudios não saem daqui" e funciona sem internet. Um teste automático falha se a página passar a apontar para um endereço externo.

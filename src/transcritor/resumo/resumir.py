@@ -22,10 +22,16 @@ SISTEMA = (
 )
 
 
-def carregar_transcricoes(pasta: str | Path) -> list[dict]:
-    """Lê os .json da pasta (formato do transcritor), em ordem de nome."""
+def carregar_transcricoes(pasta: str | Path, somente: list[str | Path] | None = None) -> list[dict]:
+    """Lê os .json da pasta (formato do transcritor), em ordem de nome.
+
+    `somente`: nomes (ou caminhos) dos .json que devem entrar; os outros da pasta são ignorados.
+    """
     itens = []
+    permitidos = {Path(s).name for s in somente} if somente is not None else None
     for caminho in sorted(Path(pasta).glob("*.json")):
+        if permitidos is not None and caminho.name not in permitidos:
+            continue
         dados = json.loads(caminho.read_text(encoding="utf-8"))
         if "segmentos" in dados:
             itens.append(dados)
@@ -33,9 +39,19 @@ def carregar_transcricoes(pasta: str | Path) -> list[dict]:
 
 
 def _id_curto(arquivo: str) -> str:
-    """'WhatsApp Ptt 2026-10-15 at 11.24.16.ogg' -> '11.24.16'."""
+    """'WhatsApp Ptt 2026-10-15 at 11.24.16.ogg' -> '11.24.16'; 'Título do vídeo [abc123XYZ_-]' -> 'abc123XYZ_-'."""
+    video = re.search(r"\[([\w-]{11})\]\s*$", Path(arquivo).stem)
+    if video:
+        return video.group(1)
     achado = re.search(r"(\d{1,2}[.:]\d{2}[.:]\d{2})", arquivo)
     return achado.group(1) if achado else Path(arquivo).stem
+
+
+def contexto_de_videos(origens: list[dict]) -> str:
+    """Frase para orientar o resumo quando o texto vem de vídeos e não de uma conversa."""
+    nomes = "; ".join(f"\"{o.get('titulo') or o['url']}\"" + (f" ({o['canal']})" if o.get("canal") else "") for o in origens)
+    return (f"O texto é a transcrição de {'um vídeo' if len(origens) == 1 else 'vídeos'} da internet: {nomes}. "
+            "Não é uma conversa entre pessoas: resuma o que o vídeo explica, o que ele conclui e o que sugere fazer.")
 
 
 def _bloco_do_audio(t: dict) -> str:
@@ -216,10 +232,13 @@ def mermaid_do_resumo(r: dict, incluir_listas: bool = False) -> str:
 
 
 def resumir_pasta(pasta: str | Path, saida: str | Path | None = None, modelo: str = "llama3.1:8b",
-                  url: str | None = None, contexto: str = "", progresso=None) -> Path:
-    """Lê as transcrições da pasta, resume e grava resumo.md, resumo.json e fluxo.mmd. Devolve a pasta de saída."""
+                  url: str | None = None, contexto: str = "", progresso=None, somente: list[str | Path] | None = None) -> Path:
+    """Lê as transcrições da pasta, resume e grava resumo.md, resumo.json e fluxo.mmd. Devolve a pasta de saída.
+
+    `somente`: resume só estes .json da pasta (útil quando a pasta já tem transcrições de outras rodadas).
+    """
     pasta = Path(pasta)
-    transcricoes = carregar_transcricoes(pasta)
+    transcricoes = carregar_transcricoes(pasta, somente)
     if not transcricoes:
         raise FileNotFoundError(f"Nenhuma transcrição .json em {pasta}. Rode `transcritor transcrever` primeiro.")
     llm = Ollama(modelo, url)

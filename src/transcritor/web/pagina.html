@@ -131,6 +131,10 @@
   .etiqueta { display:inline-block; padding:1px 9px; border-radius:99px; background:var(--accent-soft); color:var(--accent); font-weight:600; font-size:12.5px; }
   .etiqueta.aviso { background:var(--warn-soft); color:var(--warn); }
   .erro-caixa { border:1px solid var(--err); background:var(--err-soft); border-radius:10px; padding:10px 12px; color:var(--text); }
+  .aviso-caixa { border:1px solid var(--warn); background:var(--warn-soft); border-radius:10px; padding:10px 12px; font-size:14px; }
+  .aviso-caixa p + p { margin-top:6px; }
+  .texto-resumo { white-space:pre-wrap; font-size:14px; border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--bg); max-height:420px; overflow:auto; }
+  .barra.pensando > i { width:100% !important; }
   .erro-caixa details { border:0; padding:6px 0 0; }
   .erro-caixa pre { margin:6px 0 0; white-space:pre-wrap; font:12.5px/1.45 var(--mono); }
   .vazio { text-align:center; color:var(--muted); padding:28px 16px; border:1px dashed var(--line); border-radius:var(--radius); }
@@ -216,6 +220,10 @@
         <p class="ajuda cresce" id="total-arquivos"></p>
         <button type="button" class="botao secundario pequeno" id="limpar-arquivos">Remover todos</button>
       </div>
+      <label class="campo" for="links">Ou cole links de vídeo <small>(YouTube e outros sites; um por linha, até 10)</small>
+        <textarea id="links" rows="2" placeholder="Cole aqui o link do vídeo" spellcheck="false" autocomplete="off"></textarea>
+      </label>
+      <p class="ajuda" id="ajuda-links" role="status" aria-live="polite">O áudio é baixado só para transcrever e apagado em seguida.</p>
 
       <div class="passo"><b>2</b><h3>Escolha os formatos</h3></div>
       <div class="opcoes" role="group" aria-label="Formatos de saída" id="formatos"></div>
@@ -224,6 +232,10 @@
       <label class="alternar" for="falantes">
         <input type="checkbox" id="falantes" disabled>
         <div><strong>Identificar quem fala</strong><br><span class="ajuda" id="ajuda-falantes">Verificando as vozes cadastradas…</span></div>
+      </label>
+      <label class="alternar" for="resumir">
+        <input type="checkbox" id="resumir" disabled>
+        <div><strong>Resumir depois</strong><br><span class="ajuda" id="ajuda-resumir">Verificando o Ollama…</span></div>
       </label>
       <details>
         <summary>Mais opções: termos extras só para este envio</summary>
@@ -427,9 +439,41 @@ function desenharArquivos() {
   ul.hidden = !ha; $("resumo-arquivos").hidden = !ha;
   const bytes = escolhidos.reduce((s, a) => s + a.size, 0);
   $("total-arquivos").textContent = `${plural(escolhidos.length, "áudio", "áudios")} · ${tamanho(bytes)}`;
-  $("enviar").disabled = !ha || enviando;
-  $("enviar").textContent = ha ? `Transcrever ${plural(escolhidos.length, "áudio", "áudios")}` : "Transcrever";
-  if (!enviando) $("estado-envio").textContent = ha ? "Pronto para enviar. Atalho: Ctrl+Enter." : "Escolha ao menos um áudio. Atalho: Ctrl+Enter.";
+  atualizarEnvio();
+}
+
+/* links de vídeo: uma linha por link */
+const ehLink = (t) => /^https?:\/\/\S+$/i.test(t);
+function lerLinks() {
+  const linhas = $("links").value.split("\n").map((l) => l.trim()).filter(Boolean);
+  return { validos: [...new Set(linhas.filter(ehLink))], invalidos: linhas.filter((l) => !ehLink(l)) };
+}
+function atualizarEnvio() {
+  const { validos, invalidos } = lerLinks();
+  const partes = [];
+  if (escolhidos.length) partes.push(plural(escolhidos.length, "áudio", "áudios"));
+  if (validos.length) partes.push(plural(validos.length, "link", "links"));
+  const pronto = partes.length > 0 && invalidos.length === 0 && validos.length <= 10;
+  $("enviar").disabled = !pronto || enviando;
+  $("enviar").textContent = partes.length ? "Transcrever " + partes.join(" e ") : "Transcrever";
+  if (invalidos.length) $("ajuda-links").textContent = `Esta linha não parece um link: "${invalidos[0].slice(0, 50)}". Cole o endereço completo do vídeo.`;
+  else if (validos.length > 10) $("ajuda-links").textContent = "No máximo 10 links de cada vez.";
+  else if (!$("links").disabled) $("ajuda-links").textContent = "O áudio é baixado só para transcrever e apagado em seguida.";
+  if (!enviando) $("estado-envio").textContent = pronto ? "Pronto para enviar. Atalho: Ctrl+Enter." : "Escolha ao menos um áudio ou cole um link. Atalho: Ctrl+Enter.";
+}
+$("links").addEventListener("input", atualizarEnvio);
+
+let recursos = { youtube: false, ollama: false };
+async function carregarRecursos() {
+  try { recursos = await api("/api/recursos"); } catch { /* sem servidor: a faixa de aviso já cuida disso */ }
+  $("links").disabled = !recursos.youtube;
+  if (!recursos.youtube) $("ajuda-links").textContent = 'Links indisponíveis: no terminal, rode  pip install "transcritor[youtube]"  e reabra o Transcritor.';
+  $("resumir").disabled = !recursos.ollama;
+  if (!recursos.ollama) $("resumir").checked = false;
+  $("ajuda-resumir").textContent = recursos.ollama
+    ? "O Ollama monta o resumo (definido, em aberto, tarefas) e um fluxograma. Demora mais alguns minutos."
+    : "Indisponível: abra o Ollama no computador e recarregue esta página.";
+  atualizarEnvio();
 }
 $("arquivos").addEventListener("change", (e) => { adicionarArquivos([...e.target.files]); e.target.value = ""; });
 $("limpar-arquivos").addEventListener("click", () => { escolhidos = []; desenharArquivos(); });
@@ -458,13 +502,16 @@ function enviarComProgresso(dados, aoProgredir) {
 
 $("form-envio").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!escolhidos.length || enviando) return;
+  const { validos, invalidos } = lerLinks();
+  if ((!escolhidos.length && !validos.length) || invalidos.length || enviando) return;
   const formatos = [...document.querySelectorAll("#formatos input:checked")].map((i) => i.value);
   const dados = new FormData();
   escolhidos.forEach((f) => dados.append("arquivos", f));
   dados.append("formatos", formatos.join(","));
   dados.append("termos", $("termos").value);
   dados.append("falantes", $("falantes").checked ? "true" : "false");
+  dados.append("links", validos.join("\n"));
+  dados.append("resumir", $("resumir").checked ? "true" : "false");
   enviando = true; $("enviar").disabled = true; $("barra-envio").hidden = false;
   const preenchimento = $("barra-envio").firstElementChild;
   try {
@@ -473,7 +520,7 @@ $("form-envio").addEventListener("submit", async (e) => {
       $("estado-envio").textContent = p < 1 ? `Enviando… ${Math.round(p * 100)}%` : "Enviado. Preparando a transcrição…";
     });
     aviso("Enviado! Acompanhe o andamento abaixo.");
-    escolhidos = []; $("termos").value = "";
+    escolhidos = []; $("termos").value = ""; $("links").value = "";
     await atualizarFila();
     $("fila").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (erro) {
@@ -494,6 +541,7 @@ let jobs = [], temporizador = null;
 function mensagemDeErro(texto) {
   if (/cuda|cublas|cudnn|gpu/i.test(texto)) return "A placa de vídeo não respondeu. Feche outros programas que usam a GPU e envie de novo.";
   if (/modelo de voz|baixar-modelo/i.test(texto)) return "Falta o modelo de voz. Rode no terminal: transcritor vozes baixar-modelo";
+  if (/baixar|link|youtube|vídeo/i.test(texto)) return texto;   // já vem em linguagem simples, com o que fazer
   return "Não consegui transcrever este envio. Tente enviar de novo; se repetir, veja o detalhe técnico.";
 }
 
@@ -504,10 +552,12 @@ function criarCartao(j) {
   r.barra = h("div", { class: "barra", role: "progressbar", "aria-label": "Andamento do envio", "aria-valuemin": "0" }, h("i"));
   r.detalhe = h("p", { class: "meta" });
   r.erro = h("div", { class: "erro-caixa", role: "alert", hidden: true });
+  r.avisos = h("div", { class: "aviso-caixa", hidden: true });
   r.acoes = h("div", { class: "acoes" });
   r.previa = h("ul", { class: "previa", hidden: true });
-  r.raiz = h("article", { class: "envio" }, h("div", { class: "envio-topo" }, r.titulo, r.estado), r.barra, r.detalhe, r.erro, r.acoes, r.previa);
-  r.aberta = false; r.confirmando = false;
+  r.resumo = h("pre", { class: "texto-resumo", hidden: true });
+  r.raiz = h("article", { class: "envio" }, h("div", { class: "envio-topo" }, r.titulo, r.estado), r.barra, r.detalhe, r.erro, r.avisos, r.acoes, r.previa, r.resumo);
+  r.aberta = false; r.resumoAberto = false; r.confirmando = false;
   return r;
 }
 
@@ -515,18 +565,30 @@ function desenharCartao(r, j) {
   const [rotulo, icone] = ROTULO[j.status] || [j.status, "•"];
   r.estado.className = "selo-estado " + j.status; r.estado.textContent = `${icone} ${rotulo}`;
   const quando = new Date(j.criado_em * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  r.titulo.textContent = `${plural(j.total, "áudio", "áudios")} · enviado às ${quando}`;
+  const itens = [];
+  if (j.arquivos.length) itens.push(plural(j.arquivos.length, "áudio", "áudios"));
+  if (j.links.length) itens.push(plural(j.links.length, "link", "links"));
+  r.titulo.textContent = `${itens.join(" e ")} · enviado às ${quando}`;
+  const pensando = j.status === "transcrevendo" && j.etapa === "resumindo";
   const pct = j.total ? Math.round((j.feitos / j.total) * 100) : 0;
   r.barra.firstElementChild.style.width = pct + "%";
   r.barra.setAttribute("aria-valuemax", j.total); r.barra.setAttribute("aria-valuenow", j.feitos);
   r.barra.classList.toggle("ativa", j.status === "transcrevendo");
+  r.barra.classList.toggle("pensando", pensando);
   r.barra.hidden = j.status === "erro" || j.status === "cancelado" && !j.feitos;
 
   const partes = [`${j.feitos} de ${j.total} prontos`];
-  if (j.status === "transcrevendo" && j.atual) partes.push(`agora: ${j.atual}`);
+  if (j.status === "transcrevendo" && j.etapa === "baixando") partes.push(`baixando o áudio: ${j.atual}`);
+  else if (j.status === "transcrevendo" && j.etapa === "resumindo") partes.push("resumindo com o Ollama (pode levar alguns minutos)");
+  else if (j.status === "transcrevendo" && j.atual) partes.push(`agora: ${j.atual}`);
   if (j.status === "na fila") partes.push("aguardando a vez");
   if (j.falantes) partes.push("com identificação de voz");
+  if (j.resumir && j.status !== "concluído") partes.push("com resumo no fim");
   r.detalhe.textContent = partes.join(" · ");
+
+  r.avisos.hidden = j.avisos.length === 0;
+  r.avisos.textContent = "";
+  j.avisos.forEach((a) => r.avisos.append(h("p", {}, a)));
 
   r.erro.hidden = j.status !== "erro";
   if (j.status === "erro") {
@@ -550,6 +612,10 @@ function desenharCartao(r, j) {
     });
     r.acoes.append(b);
   }
+  if (j.resumo_pronto) {
+    r.acoes.append(h("button", { type: "button", class: "botao secundario pequeno", "aria-expanded": String(r.resumoAberto), onclick: () => alternarResumo(r, j) },
+      r.resumoAberto ? "Esconder resumo" : "Ver resumo"));
+  }
   if (j.feitos > 0) {
     r.acoes.append(
       h("button", { type: "button", class: "botao secundario pequeno", "aria-expanded": String(r.aberta), onclick: () => alternarPrevia(r, j) }, r.aberta ? "Esconder prévia" : "Ver prévia"),
@@ -561,6 +627,17 @@ function desenharCartao(r, j) {
   if (andamento) r.viuAndamento = true;
 }
 
+async function alternarResumo(r, j) {
+  r.resumoAberto = !r.resumoAberto;
+  if (r.resumoAberto) {
+    try {
+      const { markdown } = await api(`/api/fila/${j.id}/resumo`);
+      // o fluxograma é código Mermaid: fica no .zip (fluxo.mmd), aqui só o texto
+      r.resumo.textContent = markdown.replace(/```mermaid[\s\S]*?```/g, "(O fluxograma está no .zip, no arquivo fluxo.mmd.)");
+    } catch (erro) { aviso(erro.message, { erro: true }); r.resumoAberto = false; }
+  }
+  r.resumo.hidden = !r.resumoAberto; desenharCartao(r, j);
+}
 async function alternarPrevia(r, j) {
   r.aberta = !r.aberta;
   if (r.aberta) await carregarPrevia(r, j);
@@ -573,6 +650,7 @@ async function carregarPrevia(r, j) {
     if (!itens.length) r.previa.append(h("li", {}, "Ainda não há texto pronto."));
     for (const it of itens) r.previa.append(h("li", {},
       h("div", { class: "meta" }, h("strong", {}, it.arquivo), it.falante ? h("span", { class: "etiqueta" }, it.falante) : null,
+        it.origem ? h("a", { href: it.origem.url, target: "_blank", rel: "noopener noreferrer" }, "abrir o vídeo") : null,
         h("span", {}, hora(it.duracao_s)), it.alertas ? h("span", { class: "etiqueta aviso" }, plural(it.alertas, "alerta", "alertas")) : null),
       h("p", {}, it.trecho)));
   } catch (erro) { aviso(erro.message, { erro: true }); r.aberta = false; }
@@ -727,6 +805,7 @@ function desenharAchados(achados, consulta, falante) {
 /* ---------- início ---------- */
 irPara(location.hash.slice(1));
 desenharArquivos();
+carregarRecursos();
 carregarVozes();
 atualizarFila();
 </script>

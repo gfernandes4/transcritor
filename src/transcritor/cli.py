@@ -8,50 +8,98 @@ import time
 from pathlib import Path
 
 from . import busca, exportar
-from .api import transcrever
+from .api import transcrever, transcrever_url
 from .config import IDIOMA_PADRAO, MODELO_PADRAO
 from .nucleo import glossario as gl
+from .nucleo import youtube
 from .nucleo.audio import listar_audios
 from .nucleo.whisper import Motor
 from .transcricao import formatar_tempo
 
 
 def cmd_transcrever(args: argparse.Namespace) -> None:
-    entrada = Path(args.entrada)
-    try:
-        arquivos = listar_audios(entrada)
-    except FileNotFoundError as exc:
-        sys.exit(str(exc))
-    if not arquivos:
-        sys.exit(f"Nenhum áudio encontrado em {entrada}")
+    arquivos: list[Path] = []
+    links: list[str] = []
+    for item in args.entrada:
+        if youtube.eh_url(item):
+            links.append(item.strip())
+            continue
+        try:
+            arquivos += listar_audios(Path(item))
+        except FileNotFoundError as exc:
+            sys.exit(str(exc))
+    if not arquivos and not links:
+        sys.exit(f"Nenhum áudio encontrado em {', '.join(args.entrada)}")
+    if links and not youtube.disponivel():
+        sys.exit('Para transcrever links, instale o extra: pip install "transcritor[youtube]"')
     formatos = [f.strip() for f in args.formatos.split(",") if f.strip()]
     for f in formatos:
         if f not in exportar.FORMATOS:
             sys.exit(f"Formato desconhecido: {f}. Use: {', '.join(exportar.FORMATOS)}")
     if "json" not in formatos:
         formatos.append("json")  # o JSON alimenta a busca e o resumo
-    saida = Path(args.saida) if args.saida else (entrada if entrada.is_dir() else entrada.parent) / "transcricoes"
+    if args.saida:
+        saida = Path(args.saida)
+    elif len(args.entrada) == 1 and not links:
+        entrada = Path(args.entrada[0])
+        saida = (entrada if entrada.is_dir() else entrada.parent) / "transcricoes"
+    else:
+        saida = Path.cwd() / "transcricoes"
 
     glossario = args.glossario or None
+    total = len(arquivos) + len(links)
     motor = Motor(args.modelo, forcar_cpu=args.cpu)
-    completo = []
-    print(f"Modelo {args.modelo}: carregando e transcrevendo {len(arquivos)} arquivo(s)...", flush=True)
+    completo, jsons, origens, falhas = [], [], [], []
+    print(f"Modelo {args.modelo}: carregando e transcrevendo {total} item(ns)...", flush=True)
+
+    def concluir(i: int, t, inicio: float) -> None:
+        gravados = t.salvar(saida, formatos)
+        json_path = next(p for p in gravados if p.suffix == ".json")
+        jsons.append(json_path)
+        if t.origem:
+            origens.append(t.origem)
+        if not args.sem_indexar:
+            busca.indexar(t, json_path)
+        completo.append(f"===== {t.arquivo} ({formatar_tempo(t.duracao_s)}) =====\n{t.texto}\n")
+        extra = f", {len(t.alertas)} alerta(s)" if t.alertas else ""
+        print(f"[{i}/{total}] {t.arquivo}: {formatar_tempo(t.duracao_s)} de áudio em {time.time() - inicio:.0f}s{extra}", flush=True)
+
+    def etapa(nome: str, detalhe: str) -> None:
+        print(("  baixando o áudio de " if nome == "baixando" else "  transcrevendo: ") + detalhe, flush=True)
+
     try:
         for i, arq in enumerate(arquivos, 1):
             inicio = time.time()
-            t = transcrever(arq, glossario=glossario, idioma=args.idioma, motor=motor, bruto=args.bruto, falantes=args.falantes)
-            gravados = t.salvar(saida, formatos)
-            if not args.sem_indexar:
-                json_path = next(p for p in gravados if p.suffix == ".json")
-                busca.indexar(t, json_path)
-            completo.append(f"===== {t.arquivo} ({formatar_tempo(t.duracao_s)}) =====\n{t.texto}\n")
-            extra = f", {len(t.alertas)} alerta(s)" if t.alertas else ""
-            print(f"[{i}/{len(arquivos)}] {t.arquivo}: {formatar_tempo(t.duracao_s)} de áudio em {time.time() - inicio:.0f}s{extra}", flush=True)
+            concluir(i, transcrever(arq, glossario=glossario, idioma=args.idioma, motor=motor, bruto=args.bruto, falantes=args.falantes), inicio)
+        for i, url in enumerate(links, len(arquivos) + 1):
+            inicio = time.time()
+            try:
+                t = transcrever_url(url, glossario=glossario, idioma=args.idioma, motor=motor, bruto=args.bruto, ao_etapa=etapa)
+            except youtube.ErroDownload as exc:
+                falhas.append(url)
+                print(f"[{i}/{total}] {url}: {exc}", file=sys.stderr, flush=True)
+                continue
+            concluir(i, t, inicio)
     finally:
         motor.descarregar()
-    if len(arquivos) > 1:
+    if not jsons:
+        sys.exit("Nenhum item foi transcrito.")
+    if len(jsons) > 1:
         (saida / "transcricao_completa.txt").write_text("\n".join(completo), encoding="utf-8")
     print(f"Pronto. Arquivos em: {saida}")
+    if args.resumir:
+        from .resumo import contexto_de_videos, resumir_pasta  # módulo opcional
+
+        contexto = args.contexto or (contexto_de_videos(origens) if len(origens) == len(jsons) else "")
+        print("Resumindo (o Whisper já saiu da GPU)...", flush=True)
+        try:
+            pasta_resumo = resumir_pasta(saida, modelo=args.modelo_llm, url=args.ollama, contexto=contexto, somente=jsons,
+                                         progresso=lambda i, n: print(f"  bloco {i} de {n}...", flush=True))
+        except (RuntimeError, FileNotFoundError) as exc:
+            sys.exit(f"As transcrições estão salvas, mas o resumo falhou: {exc}")
+        print(f"Resumo em: {pasta_resumo}")
+    if falhas:
+        sys.exit(f"{len(falhas)} link(s) não foram transcritos.")
 
 
 def cmd_glossario(args: argparse.Namespace) -> None:
@@ -120,8 +168,12 @@ def main(argv: list[str] | None = None) -> None:
     sub = ap.add_subparsers(dest="comando", required=True)
 
     p = sub.add_parser("transcrever", help="transcreve um arquivo ou uma pasta de áudios")
-    p.add_argument("entrada", help="arquivo ou pasta")
-    p.add_argument("--saida", help="pasta de saída (padrão: <entrada>/transcricoes)")
+    p.add_argument("entrada", nargs="+", help="arquivo, pasta ou link de vídeo (YouTube etc.); pode misturar")
+    p.add_argument("--saida", help="pasta de saída (padrão: <entrada>/transcricoes; com links, ./transcricoes)")
+    p.add_argument("--resumir", action="store_true", help="depois de transcrever, resume com o Ollama (precisa estar aberto)")
+    p.add_argument("--modelo-llm", default="llama3.1:8b", help="modelo do Ollama usado em --resumir")
+    p.add_argument("--ollama", help="endereço do Ollama (padrão: http://localhost:11434)")
+    p.add_argument("--contexto", default="", help="uma frase sobre o conteúdo, para orientar o resumo")
     p.add_argument("--formatos", default="txt,md,json", help=f"separados por vírgula: {', '.join(exportar.FORMATOS)}")
     p.add_argument("--glossario", help="arquivo extra de termos (soma ao glossário do usuário)")
     p.add_argument("--modelo", default=MODELO_PADRAO)

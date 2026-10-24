@@ -42,9 +42,9 @@ class Ollama:
         except urllib.error.URLError as exc:
             raise ErroLLM(f"Não consegui falar com o Ollama em {self.url}: {exc}. Ele está rodando?") from exc
 
-    def disponivel(self) -> bool:
+    def disponivel(self, timeout: float = 5) -> bool:
         try:
-            urllib.request.urlopen(self.url + "/api/tags", timeout=5)
+            urllib.request.urlopen(self.url + "/api/tags", timeout=timeout)
             return True
         except Exception:  # noqa: BLE001
             return False

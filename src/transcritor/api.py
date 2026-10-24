@@ -6,12 +6,14 @@
 """
 from __future__ import annotations
 
+import tempfile
 import time
 from pathlib import Path
 
 from . import busca
 from .config import IDIOMA_PADRAO, MODELO_PADRAO
 from .nucleo import glossario as glossario_mod
+from .nucleo import youtube
 from .nucleo.alertas import limpar_e_alertar
 from .nucleo.audio import listar_audios, sha1_do_arquivo
 from .nucleo.whisper import Motor, Parametros
@@ -30,8 +32,9 @@ def transcrever(
     bruto: bool = False,
     falantes: bool = False,
 ) -> Transcricao:
-    """Transcreve um arquivo e devolve a `Transcricao`.
+    """Transcreve um arquivo (ou um link de vídeo) e devolve a `Transcricao`.
 
+    Se `caminho` for um link http(s), o áudio é baixado antes (extra `youtube`): veja `transcrever_url`.
     `falantes`: identifica de quem é a voz (precisa do extra `vozes` e de vozes cadastradas).
 
     `glossario`: lista de termos, ou caminho de um arquivo extra (soma ao glossário do usuário).
@@ -39,6 +42,9 @@ def transcrever(
     `bruto`: comportamento da primeira versão (sem glossário, sem ajustes, sem limpeza), útil para comparar.
     `limpar`: remove loops óbvios e gera alertas. Padrão: ligado, exceto no modo bruto.
     """
+    if youtube.eh_url(caminho):
+        return transcrever_url(caminho, glossario=glossario, modelo=modelo, idioma=idioma, motor=motor,
+                               parametros=parametros, limpar=limpar, bruto=bruto)
     caminho = Path(caminho)
     if bruto:
         termos: list[str] = []
@@ -66,6 +72,26 @@ def transcrever(
     if falantes:
         _identificar_falante(resultado, caminho)
     return resultado
+
+
+def transcrever_url(url: str, *, ao_etapa=None, **opcoes) -> Transcricao:
+    """Baixa o áudio de um link, transcreve e apaga o áudio baixado.
+
+    `opcoes` são as mesmas de `transcrever` (glossário, motor, idioma...). A identificação de voz não se aplica
+    a links: o apresentador não está entre as vozes cadastradas.
+    `ao_etapa(etapa, detalhe)` é chamada com ("baixando", link) e depois ("transcrevendo", título).
+    """
+    opcoes.pop("falantes", None)
+    if ao_etapa:
+        ao_etapa("baixando", url)
+    with tempfile.TemporaryDirectory(prefix="transcritor_") as pasta:
+        baixado = youtube.baixar_audio(url, pasta)
+        if ao_etapa:
+            ao_etapa("transcrevendo", baixado.titulo or url)
+        t = transcrever(baixado.arquivo, **opcoes)
+    t.arquivo = baixado.nome
+    t.origem = baixado.origem()
+    return t
 
 
 def _identificar_falante(t: Transcricao, caminho: Path) -> None:

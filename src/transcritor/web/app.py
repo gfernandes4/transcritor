@@ -19,14 +19,16 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from .. import busca, exportar
-from ..api import transcrever
+from ..api import transcrever, transcrever_url
 from ..config import MODELO_PADRAO, home
 from ..nucleo import glossario as gl
+from ..nucleo import youtube
 from ..nucleo.audio import EXTENSOES
 from ..nucleo.whisper import Motor
 from ..transcricao import Transcricao
 
 PAGINA = Path(__file__).with_name("pagina.html")
+MAXIMO_DE_LINKS = 10
 
 
 @dataclass
@@ -37,33 +39,78 @@ class Job:
     formatos: list[str]
     glossario: list[str]
     falantes: bool = False
+    urls: list[str] = field(default_factory=list)
+    resumir: bool = False
     status: str = "na fila"          # na fila | transcrevendo | concluído | cancelado | erro
-    feitos: int = 0
-    atual: str = ""                  # arquivo em andamento
+    etapa: str = ""                  # baixando | transcrevendo | resumindo (enquanto o status é "transcrevendo")
+    feitos: int = 0                  # itens terminados (com sucesso ou com falha)
+    atual: str = ""                  # arquivo ou link em andamento
     erro: str = ""
+    avisos: list[str] = field(default_factory=list)   # o que deu errado sem derrubar o envio
+    resumo_pronto: bool = False
     cancelado: bool = False
     criado_em: float = field(default_factory=time.time)
 
+    @property
+    def total(self) -> int:
+        return len(self.arquivos) + len(self.urls)
+
     def para_dict(self) -> dict:
-        return {"id": self.id, "status": self.status, "feitos": self.feitos, "total": len(self.arquivos),
-                "arquivos": [a.name for a in self.arquivos], "atual": self.atual, "erro": self.erro,
-                "falantes": self.falantes, "criado_em": self.criado_em}
+        return {"id": self.id, "status": self.status, "etapa": self.etapa, "feitos": self.feitos, "total": self.total,
+                "arquivos": [a.name for a in self.arquivos], "links": self.urls, "atual": self.atual, "erro": self.erro,
+                "avisos": self.avisos, "falantes": self.falantes, "resumir": self.resumir, "resumo_pronto": self.resumo_pronto,
+                "criado_em": self.criado_em}
+
+
+def _guardar(job: Job, t: Transcricao) -> Path:
+    gravados = t.salvar(job.saida, job.formatos)
+    json_path = next(p for p in gravados if p.suffix == ".json")
+    busca.indexar(t, json_path)
+    return json_path
 
 
 def executar_job(job: Job) -> None:
-    """Transcreve os arquivos do job com um único carregamento do modelo."""
+    """Transcreve os arquivos e links do job com um único carregamento do modelo e, se pedido, resume no fim."""
     motor = Motor(MODELO_PADRAO)
+    jsons: list[Path] = []
+    origens: list[dict] = []
     try:
         for arquivo in job.arquivos:
             if job.cancelado:
                 break
-            job.atual = arquivo.name
-            t = transcrever(arquivo, glossario=job.glossario or None, motor=motor, falantes=job.falantes)
-            gravados = t.salvar(job.saida, job.formatos)
-            busca.indexar(t, next(p for p in gravados if p.suffix == ".json"))
+            job.etapa, job.atual = "transcrevendo", arquivo.name
+            jsons.append(_guardar(job, transcrever(arquivo, glossario=job.glossario or None, motor=motor, falantes=job.falantes)))
+            job.feitos += 1
+        for url in job.urls:
+            if job.cancelado:
+                break
+            job.etapa, job.atual = "baixando", url
+
+            def marcar(etapa: str, detalhe: str) -> None:
+                job.etapa, job.atual = etapa, detalhe
+
+            try:
+                t = transcrever_url(url, glossario=job.glossario or None, motor=motor, ao_etapa=marcar)
+            except youtube.ErroDownload as exc:
+                job.avisos.append(f"{url}: {exc}")
+            else:
+                jsons.append(_guardar(job, t))
+                origens.append(t.origem)
             job.feitos += 1
     finally:
-        motor.descarregar()
+        motor.descarregar()   # a GPU precisa ficar livre para o Ollama
+    if not jsons and not job.cancelado:
+        raise RuntimeError(" ".join(job.avisos) or "Nada foi transcrito.")
+    if job.resumir and jsons and not job.cancelado:
+        job.etapa, job.atual = "resumindo", ""
+        try:
+            from ..resumo import contexto_de_videos, resumir_pasta
+
+            contexto = contexto_de_videos(origens) if origens and len(origens) == len(jsons) else ""
+            resumir_pasta(job.saida, saida=job.saida / "resumo", contexto=contexto, somente=jsons)
+            job.resumo_pronto = True
+        except Exception as exc:  # noqa: BLE001 - as transcrições já estão salvas; o resumo é um extra
+            job.avisos.append(f"A transcrição está pronta, mas o resumo falhou: {exc}")
 
 
 class Fila:
@@ -75,9 +122,9 @@ class Fila:
             threading.Thread(target=self._loop, daemon=True).start()
 
     def enviar(self, arquivos: list[Path], saida: Path, formatos: list[str], glossario: list[str],
-               falantes: bool = False, job_id: str | None = None) -> Job:
+               falantes: bool = False, job_id: str | None = None, urls: list[str] | None = None, resumir: bool = False) -> Job:
         job = Job(id=job_id or uuid.uuid4().hex[:8], arquivos=arquivos, saida=saida, formatos=formatos,
-                  glossario=glossario, falantes=falantes)
+                  glossario=glossario, falantes=falantes, urls=urls or [], resumir=resumir)
         self.jobs[job.id] = job
         self._fila.put(job)
         return job
@@ -106,7 +153,7 @@ class Fila:
         except Exception as exc:  # noqa: BLE001 - um job com erro não derruba a fila
             job.status, job.erro = "erro", str(exc)
         finally:
-            job.atual = ""
+            job.atual, job.etapa = "", ""
 
 
 def criar_app(fila: Fila | None = None) -> FastAPI:
@@ -119,11 +166,22 @@ def criar_app(fila: Fila | None = None) -> FastAPI:
         return FileResponse(PAGINA, media_type="text/html; charset=utf-8")
 
     @app.post("/enviar")
-    async def enviar(arquivos: list[UploadFile] = File(...), formatos: str = Form("txt,md,json"), termos: str = Form(""),
-                     falantes: bool = Form(False)):
+    async def enviar(arquivos: list[UploadFile] = File(default=[]), formatos: str = Form("txt,md,json"), termos: str = Form(""),
+                     falantes: bool = Form(False), links: str = Form(""), resumir: bool = Form(False)):
         lista_formatos = [f.strip() for f in formatos.split(",") if f.strip()]
         if any(f not in exportar.FORMATOS for f in lista_formatos):
             raise HTTPException(400, f"Formato inválido. Use: {', '.join(exportar.FORMATOS)}")
+        arquivos = [up for up in arquivos if up.filename]
+        urls = list(dict.fromkeys(l.strip() for l in links.splitlines() if l.strip()))
+        if not arquivos and not urls:
+            raise HTTPException(400, "Escolha ao menos um áudio ou cole um link.")
+        for u in urls:
+            if not youtube.eh_url(u):
+                raise HTTPException(400, f"Isto não parece um link: {u[:60]}")
+        if len(urls) > MAXIMO_DE_LINKS:
+            raise HTTPException(400, f"Envie no máximo {MAXIMO_DE_LINKS} links de cada vez.")
+        if urls and not youtube.disponivel():
+            raise HTTPException(400, 'Falta o módulo de links. No terminal: pip install "transcritor[youtube]"')
         if "json" not in lista_formatos:
             lista_formatos.append("json")
         job_id = uuid.uuid4().hex[:8]
@@ -140,8 +198,15 @@ def criar_app(fila: Fila | None = None) -> FastAPI:
             salvos.append(destino)
         extras = [t.strip() for t in termos.splitlines() if t.strip()]
         job = fila.enviar(salvos, pasta_web / job_id / "saida", lista_formatos, gl.carregar(termos=extras),
-                          falantes=falantes, job_id=job_id)
+                          falantes=falantes, job_id=job_id, urls=urls, resumir=resumir)
         return job.para_dict()
+
+    @app.get("/api/recursos")
+    def recursos():
+        """O que está disponível agora: links (extra youtube) e resumo (Ollama aberto)."""
+        from ..resumo.llm import Ollama
+
+        return {"youtube": youtube.disponivel(), "ollama": Ollama().disponivel(timeout=1)}
 
     @app.get("/api/fila")
     def listar_fila():
@@ -167,10 +232,18 @@ def criar_app(fila: Fila | None = None) -> FastAPI:
             except (OSError, ValueError, KeyError):
                 continue
             texto = t.texto
-            itens.append({"arquivo": t.arquivo, "duracao_s": t.duracao_s, "alertas": len(t.alertas),
+            itens.append({"arquivo": t.arquivo, "duracao_s": t.duracao_s, "alertas": len(t.alertas), "origem": t.origem,
                           "falante": (t.falante or {}).get("nome"),
                           "trecho": texto[:limite] + ("…" if len(texto) > limite else "")})
         return itens
+
+    @app.get("/api/fila/{job_id}/resumo")
+    def resumo(job_id: str):
+        job = fila.jobs.get(job_id)
+        arquivo = job.saida / "resumo" / "resumo.md" if job else None
+        if not arquivo or not arquivo.exists():
+            raise HTTPException(404, "Esse envio não tem resumo.")
+        return {"markdown": arquivo.read_text(encoding="utf-8")}
 
     @app.get("/resultado/{job_id}")
     def resultado(job_id: str):
@@ -179,8 +252,8 @@ def criar_app(fila: Fila | None = None) -> FastAPI:
             raise HTTPException(404, "Resultado ainda não está pronto.")
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
-            for caminho in sorted(job.saida.glob("*")):
-                z.write(caminho, caminho.name)
+            for caminho in sorted(p for p in job.saida.rglob("*") if p.is_file()):
+                z.write(caminho, caminho.relative_to(job.saida).as_posix())
         buffer.seek(0)
         return StreamingResponse(buffer, media_type="application/zip",
                                  headers={"Content-Disposition": f'attachment; filename="transcricoes_{job_id}.zip"'})

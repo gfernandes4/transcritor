@@ -22,6 +22,7 @@ class Transcricao:
     falante: dict | None = None                          # {nome, confianca} (módulo de voz)
     alertas: list[dict] = field(default_factory=list)    # [{tipo, inicio, detalhe}]
     sha1: str = ""
+    origem: dict | None = None                           # {url, titulo, canal} quando veio de um link
     gerado_em: str = field(default_factory=lambda: dt.datetime.now().isoformat(timespec="seconds"))
 
     @property

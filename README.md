@@ -7,6 +7,8 @@ O que ele faz:
 
 - **Transcreve** um arquivo ou uma pasta inteira (`.ogg`, `.opus`, `.mp3`, `.m4a`, `.wav`, vídeo e outros) para
   `txt`, `md`, `json`, `srt` e `vtt`.
+- **Links de vídeo** (opcional): cole o link de um vídeo do YouTube (ou de outro site que o
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp) conheça) e o pipeline baixa o áudio, transcreve e, se quiser, resume.
 - **Glossário** de nomes e termos que cresce com o uso e é passado ao Whisper como dica.
 - **Antirrepetição e alertas:** remove loops e trechos corrompidos e avisa quando algo parece estranho.
 - **Busca** em todas as transcrições (SQLite, sem diferenciar acentos nem maiúsculas).
@@ -63,11 +65,13 @@ source .venv/bin/activate
 ```
 pip install -e ".[gpu,web]"             # placa NVIDIA + interface web (o caminho mais comum)
 pip install -e ".[web]"                 # sem placa NVIDIA (use --cpu ao transcrever)
+pip install -e ".[gpu,web,youtube]"     # com links do YouTube
 pip install -e ".[gpu,web,vozes]"       # com identificação de voz
-pip install -e ".[gpu,web,vozes,dev]"   # tudo, mais os testes
+pip install -e ".[gpu,web,vozes,youtube,dev]"   # tudo, mais os testes
 ```
 
-Extras: `gpu` (bibliotecas CUDA), `web` (interface no navegador), `vozes` (quem fala), `dev` (testes).
+Extras: `gpu` (bibliotecas CUDA), `web` (interface no navegador), `youtube` (transcrever a partir de links),
+`vozes` (quem fala), `dev` (testes).
 O resumo não precisa de extra, só do Ollama.
 
 **4. Confira que funcionou**
@@ -105,6 +109,23 @@ transcritor resumir pasta_de_audios/transcricoes          # resumo.md + resumo.j
 Por padrão grava `.txt`, `.md` e `.json` em `<pasta>/transcricoes/`. `--bruto` volta ao comportamento mais simples
 (sem glossário, ajustes nem limpeza), útil para comparar.
 
+### Transcrever a partir de um link (opcional)
+
+```
+pip install -e ".[youtube]"
+transcritor transcrever "https://www.youtube.com/watch?v=XXXXXXXXXXX"
+transcritor transcrever "<link 1>" "<link 2>" audio.ogg pasta/      # pode misturar links, arquivos e pastas
+transcritor transcrever "<link>" --saida meus_videos --resumir      # transcreve e resume na mesma rodada
+```
+
+O áudio é baixado numa pasta temporária, transcrito e apagado em seguida. O resultado leva o título do vídeo,
+o canal e o link (no `.md` e no `.json`), entra na busca e fica em `./transcricoes/` (ou na pasta de `--saida`).
+Na interface web é só colar o link no campo "Ou cole links de vídeo" e, se quiser, marcar "Resumir depois".
+Na biblioteca: `transcrever("https://...")` ou `transcrever_url(...)`.
+
+Cada link é um vídeo só (playlists e canais são recusados com um aviso). A identificação de voz não se aplica a
+links, porque o apresentador não está entre as pessoas cadastradas.
+
 ### Resumo (opcional)
 
 Instale o [Ollama](https://ollama.com), baixe um modelo e rode o resumo **depois** da transcrição:
@@ -114,7 +135,10 @@ ollama pull llama3.1:8b
 transcritor resumir pasta_de_audios/transcricoes
 ```
 
-Whisper e Ollama não cabem juntos em 6 GB de placa de vídeo, por isso o resumo é um comando separado.
+Ou na mesma rodada, com `--resumir` (a interface web tem a caixa "Resumir depois"): o Whisper é descarregado da
+placa de vídeo antes do Ollama começar. Se o resumo falhar, a transcrição já está salva.
+
+Whisper e Ollama não cabem juntos em 6 GB de placa de vídeo, por isso o resumo roda sempre depois.
 O modelo de 8 bilhões de parâmetros serve de ponto de partida, não de verdade final: confira antes de usar.
 
 ### Quem fala (opcional)
@@ -152,6 +176,9 @@ print(t.texto)            # "[00:00:00] Opa, fala aí meu." ...
 print(t.alertas)          # trechos suspeitos, se houver
 t.salvar("saida/", formatos=["txt", "srt"])
 
+v = transcrever("https://www.youtube.com/watch?v=XXXXXXXXXXX")   # precisa do extra [youtube]
+print(v.origem["titulo"], v.texto_simples[:200])
+
 for achado in buscar("cartão SD"):
     print(achado["arquivo"], achado["inicio"], achado["texto"])
 ```
@@ -168,6 +195,12 @@ dentro do repositório.
 ## Limites conhecidos
 
 - Nomes que não estão no glossário podem sair errados. Use `glossario sugerir` depois de transcrever.
+- O resumo foi pensado para conversas (definido, em aberto, tarefas). Em vídeos explicativos ou tutoriais ele serve só
+  como rascunho: os passos viram "definido" e a lista de pessoas pode sair com itens estranhos.
+- Links: o YouTube muda com frequência, então o yt-dlp precisa de atualização de vez em quando
+  (`pip install -U yt-dlp`). Às vezes o YouTube pede verificação anti-robô; o Transcritor não tenta contornar isso,
+  só avisa, e você pode baixar o vídeo por outro meio e enviar o arquivo. Use apenas com conteúdo que você pode
+  transcrever e respeite os termos do site e os direitos do autor.
 - Fora do escopo: separar várias vozes no mesmo áudio, transcrição em tempo real, tradução e clonagem de voz.
 - Testado no Windows 11 com uma RTX 3050 de 6 GB. Em Linux e macOS ainda não foi testado.
 - Se aparecer erro de `cublas` ou `cudnn`, instale com o extra `gpu` ou rode com `--cpu`.

@@ -23,6 +23,9 @@ def _txt(t: Transcricao) -> str:
 def _md(t: Transcricao) -> str:
     minutos, segundos = divmod(int(t.duracao_s), 60)
     linhas = [f"# {t.arquivo}", "", f"- Duração: {minutos}:{segundos:02d} · Modelo: {t.modelo} · Idioma: {t.idioma}"]
+    if t.origem:
+        canal = f" · Canal: {t.origem['canal']}" if t.origem.get("canal") else ""
+        linhas.append(f"- Fonte: [{t.origem.get('titulo') or t.origem['url']}]({t.origem['url']}){canal}")
     if t.falante:
         linhas.append(f"- Falante: {t.falante.get('nome')} ({t.falante.get('confianca', 0):.0%})")
     if t.alertas:
