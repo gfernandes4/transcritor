@@ -138,6 +138,15 @@ transcritor resumir pasta_de_audios/transcricoes
 Ou na mesma rodada, com `--resumir` (a interface web tem a caixa "Resumir depois"): o Whisper é descarregado da
 placa de vídeo antes do Ollama começar. Se o resumo falhar, a transcrição já está salva.
 
+Há dois modos, escolhidos sozinhos (`--modo-resumo auto`, o padrão) ou à força com `--modo-resumo conversa|video`:
+
+- **Conversa** (áudios de gente conversando): o que ficou definido, o que está em aberto, tarefas com responsável,
+  pessoas citadas e um fluxograma Mermaid (`resumo.md`, `resumo.json`, `fluxo.mmd`).
+- **Vídeo** (quando tudo veio de links): "Resumo do vídeo" com um resumo em poucas linhas, o passo a passo numerado
+  com o minuto de cada passo, os pontos principais e as ferramentas citadas (`resumo.md`, `resumo.json`), sem lista
+  de pessoas nem fluxograma. Textos longos são lidos em partes, então o vídeo inteiro entra no resumo. Num tutorial
+  de 27 minutos, o resumo levou ~4 minutos numa RTX 3050.
+
 Whisper e Ollama não cabem juntos em 6 GB de placa de vídeo, por isso o resumo roda sempre depois.
 O modelo de 8 bilhões de parâmetros serve de ponto de partida, não de verdade final: confira antes de usar.
 
@@ -195,8 +204,9 @@ dentro do repositório.
 ## Limites conhecidos
 
 - Nomes que não estão no glossário podem sair errados. Use `glossario sugerir` depois de transcrever.
-- O resumo foi pensado para conversas (definido, em aberto, tarefas). Em vídeos explicativos ou tutoriais ele serve só
-  como rascunho: os passos viram "definido" e a lista de pessoas pode sair com itens estranhos.
+- O resumo de vídeo é um rascunho: o modelo local pode errar nomes de ferramentas que a transcrição escreveu errado
+  (por exemplo, "Veo 3" virar "Vio 3"), juntar ou dividir passos de um jeito diferente do seu, e esquecer detalhes.
+  Confira com o vídeo antes de usar.
 - Links: o YouTube muda com frequência, então o yt-dlp precisa de atualização de vez em quando
   (`pip install -U yt-dlp`). Às vezes o YouTube pede verificação anti-robô; o Transcritor não tenta contornar isso,
   só avisa, e você pode baixar o vídeo por outro meio e enviar o arquivo. Use apenas com conteúdo que você pode

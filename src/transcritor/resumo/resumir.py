@@ -54,22 +54,44 @@ def contexto_de_videos(origens: list[dict]) -> str:
             "Não é uma conversa entre pessoas: resuma o que o vídeo explica, o que ele conclui e o que sugere fazer.")
 
 
-def _bloco_do_audio(t: dict) -> str:
+def _cabecalho_do_audio(t: dict) -> str:
     quem = (t.get("falante") or {}).get("nome")
-    cabecalho = f"===== {_id_curto(t['arquivo'])}" + (f" · {quem}" if quem else "") + " ====="
-    return cabecalho + "\n" + " ".join(s["texto"] for s in t["segmentos"])
+    return f"===== {_id_curto(t['arquivo'])}" + (f" · {quem}" if quem else "") + " ====="
+
+
+def _bloco_do_audio(t: dict) -> str:
+    return _cabecalho_do_audio(t) + "\n" + " ".join(s["texto"] for s in t["segmentos"])
+
+
+def _partes_do_audio(t: dict, limite: int) -> list[str]:
+    """Um áudio que cabe vira um bloco só. Um áudio maior que `limite` é cortado entre trechos, com o mesmo cabeçalho
+    em cada parte; sem isso o Ollama descartaria em silêncio o começo do texto que não cabe no contexto."""
+    inteiro = _bloco_do_audio(t)
+    if len(inteiro) <= limite:
+        return [inteiro]
+    cabecalho = _cabecalho_do_audio(t)
+    partes, atual, tamanho = [], [], len(cabecalho)
+    for s in t["segmentos"]:
+        if atual and tamanho + len(s["texto"]) + 1 > limite:
+            partes.append(cabecalho + "\n" + " ".join(atual))
+            atual, tamanho = [], len(cabecalho)
+        atual.append(s["texto"])
+        tamanho += len(s["texto"]) + 1
+    if atual:
+        partes.append(cabecalho + "\n" + " ".join(atual))
+    return partes
 
 
 def dividir_em_blocos(transcricoes: list[dict], limite: int = LIMITE_CARACTERES_POR_BLOCO) -> list[str]:
-    """Agrupa áudios inteiros em blocos de até `limite` caracteres. Um áudio maior que o limite fica sozinho."""
+    """Agrupa áudios inteiros em blocos de até `limite` caracteres; um áudio maior que o limite é cortado em partes."""
     blocos, atual, tamanho = [], [], 0
     for t in transcricoes:
-        texto = _bloco_do_audio(t)
-        if atual and tamanho + len(texto) > limite:
-            blocos.append("\n\n".join(atual))
-            atual, tamanho = [], 0
-        atual.append(texto)
-        tamanho += len(texto)
+        for texto in _partes_do_audio(t, limite):
+            if atual and tamanho + len(texto) > limite:
+                blocos.append("\n\n".join(atual))
+                atual, tamanho = [], 0
+            atual.append(texto)
+            tamanho += len(texto)
     if atual:
         blocos.append("\n\n".join(atual))
     return blocos
@@ -232,25 +254,43 @@ def mermaid_do_resumo(r: dict, incluir_listas: bool = False) -> str:
 
 
 def resumir_pasta(pasta: str | Path, saida: str | Path | None = None, modelo: str = "llama3.1:8b",
-                  url: str | None = None, contexto: str = "", progresso=None, somente: list[str | Path] | None = None) -> Path:
-    """Lê as transcrições da pasta, resume e grava resumo.md, resumo.json e fluxo.mmd. Devolve a pasta de saída.
+                  url: str | None = None, contexto: str = "", progresso=None, somente: list[str | Path] | None = None,
+                  modo: str | None = None) -> Path:
+    """Lê as transcrições da pasta, resume e grava o resumo. Devolve a pasta de saída.
 
     `somente`: resume só estes .json da pasta (útil quando a pasta já tem transcrições de outras rodadas).
+    `modo`: "conversa" (definido, em aberto, tarefas, fluxograma: grava resumo.md, resumo.json e fluxo.mmd) ou "video"
+    (resumo curto, passo a passo, pontos e ferramentas: grava resumo.md e resumo.json). Sem `modo`, é "video" quando
+    todas as transcrições vieram de um link e "conversa" nos outros casos.
     """
     pasta = Path(pasta)
     transcricoes = carregar_transcricoes(pasta, somente)
     if not transcricoes:
         raise FileNotFoundError(f"Nenhuma transcrição .json em {pasta}. Rode `transcritor transcrever` primeiro.")
+    if modo not in (None, "auto", "conversa", "video"):
+        raise ValueError(f"Modo de resumo desconhecido: {modo}. Use auto, conversa ou video.")
+    if modo in (None, "auto"):
+        modo = "video" if all(t.get("origem") for t in transcricoes) else "conversa"
     llm = Ollama(modelo, url)
     if not llm.disponivel():
         raise RuntimeError(f"O Ollama não responde em {llm.url}. Inicie o Ollama e tente de novo.")
     try:
-        resultado = resumir(transcricoes, llm, contexto=contexto, progresso=progresso)
+        if modo == "video":
+            from .video import para_markdown_video, resumir_videos
+
+            resultado = resumir_videos(transcricoes, llm, progresso=progresso)
+            markdown = para_markdown_video(resultado)
+        else:
+            resultado = resumir(transcricoes, llm, contexto=contexto, progresso=progresso)
+            markdown = para_markdown(resultado)
     finally:
         llm.descarregar()
     saida = Path(saida) if saida else pasta / "resumo"
     saida.mkdir(parents=True, exist_ok=True)
-    (saida / "resumo.md").write_text(para_markdown(resultado), encoding="utf-8")
+    (saida / "resumo.md").write_text(markdown, encoding="utf-8")
     (saida / "resumo.json").write_text(json.dumps(resultado, ensure_ascii=False, indent=2), encoding="utf-8")
-    (saida / "fluxo.mmd").write_text(mermaid_do_resumo(resultado), encoding="utf-8")
+    if modo == "video":
+        (saida / "fluxo.mmd").unlink(missing_ok=True)   # sobra de uma rodada antiga em modo conversa
+    else:
+        (saida / "fluxo.mmd").write_text(mermaid_do_resumo(resultado), encoding="utf-8")
     return saida

@@ -94,7 +94,7 @@ def cmd_transcrever(args: argparse.Namespace) -> None:
         print("Resumindo (o Whisper já saiu da GPU)...", flush=True)
         try:
             pasta_resumo = resumir_pasta(saida, modelo=args.modelo_llm, url=args.ollama, contexto=contexto, somente=jsons,
-                                         progresso=lambda i, n: print(f"  bloco {i} de {n}...", flush=True))
+                                         modo=args.modo_resumo, progresso=lambda i, n: print(f"  bloco {i} de {n}...", flush=True))
         except (RuntimeError, FileNotFoundError) as exc:
             sys.exit(f"As transcrições estão salvas, mas o resumo falhou: {exc}")
         print(f"Resumo em: {pasta_resumo}")
@@ -141,8 +141,8 @@ def cmd_resumir(args: argparse.Namespace) -> None:
         print(f"Resumindo bloco {i} de {n}...", flush=True)
 
     saida = resumir_pasta(args.pasta, saida=args.saida, modelo=args.modelo_llm, url=args.ollama,
-                          contexto=args.contexto, progresso=progresso)
-    print(f"Pronto. Resumo em: {saida}\\resumo.md (fluxograma em fluxo.mmd)")
+                          contexto=args.contexto, modo=args.modo_resumo, progresso=progresso)
+    print(f"Pronto. Resumo em: {saida}\\resumo.md" + (" (fluxograma em fluxo.mmd)" if (saida / "fluxo.mmd").exists() else ""))
 
 
 def cmd_vozes(args: argparse.Namespace) -> None:
@@ -174,6 +174,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--modelo-llm", default="llama3.1:8b", help="modelo do Ollama usado em --resumir")
     p.add_argument("--ollama", help="endereço do Ollama (padrão: http://localhost:11434)")
     p.add_argument("--contexto", default="", help="uma frase sobre o conteúdo, para orientar o resumo")
+    p.add_argument("--modo-resumo", choices=["auto", "conversa", "video"], default="auto",
+                   help="auto: vídeo quando tudo veio de links, conversa nos outros casos")
     p.add_argument("--formatos", default="txt,md,json", help=f"separados por vírgula: {', '.join(exportar.FORMATOS)}")
     p.add_argument("--glossario", help="arquivo extra de termos (soma ao glossário do usuário)")
     p.add_argument("--modelo", default=MODELO_PADRAO)
@@ -201,6 +203,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--modelo-llm", default="llama3.1:8b", help="modelo do Ollama")
     p.add_argument("--ollama", help="endereço do Ollama (padrão: http://localhost:11434)")
     p.add_argument("--contexto", default="", help="uma frase sobre a conversa, para orientar o resumo")
+    p.add_argument("--modo-resumo", choices=["auto", "conversa", "video"], default="auto",
+                   help="auto: vídeo quando as transcrições vieram de links, conversa nos outros casos")
     p.set_defaults(funcao=cmd_resumir)
 
     p = sub.add_parser("vozes", help="identifica quem fala em cada áudio (módulo opcional)")
