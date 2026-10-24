@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transcritor"
+version = "0.1.0"
+description = "Transcritor local de áudios (faster-whisper) com glossário, busca, resumo e interface web simples."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["faster-whisper>=1.1"]
+
+[project.optional-dependencies]
+# Bibliotecas CUDA para rodar na GPU NVIDIA no Windows.
+gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"]
+# Identificação de voz: sherpa-onnx roda os modelos ONNX; os modelos são baixados com `transcritor vozes baixar-modelo`.
+vozes = ["sherpa-onnx", "numpy"]
+# O resumo usa só a biblioteca padrão: o Ollama é chamado por HTTP.
+resumo = []
+web = ["fastapi", "uvicorn", "python-multipart"]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+transcritor = "transcritor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+transcritor = ["web/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["lento: usa o modelo de verdade (ligue com TRANSCRITOR_TESTES_LENTOS=1)"]

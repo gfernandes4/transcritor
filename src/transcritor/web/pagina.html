@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Transcritor</title>
+<style>
+  :root {
+    --bg:#f5f6fa; --surface:#ffffff; --surface-2:#f0f2f8; --text:#1a1f2e; --muted:#566074; --line:#dde1ec;
+    --accent:#3451d1; --accent-hover:#2a43b3; --on-accent:#ffffff; --accent-soft:#e8ecff;
+    --ok:#17704a; --ok-soft:#e1f5eb; --warn:#8a5700; --warn-soft:#fff2d1; --err:#b42318; --err-soft:#fde8e6;
+    --radius:12px; --sombra:0 1px 2px rgba(20,25,45,.06), 0 4px 16px rgba(20,25,45,.05);
+    --fonte:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono:ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0e1220; --surface:#161b2b; --surface-2:#1d2336; --text:#e9ecf5; --muted:#a3acc2; --line:#2a3249;
+      --accent:#93a8ff; --accent-hover:#b0c0ff; --on-accent:#0e1220; --accent-soft:#232c52;
+      --ok:#62d69c; --ok-soft:#12301f; --warn:#f3c45f; --warn-soft:#3a2d0c; --err:#ff9087; --err-soft:#3d1714;
+      --sombra:0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing:border-box; }
+  html { scroll-padding-top:80px; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 var(--fonte); -webkit-font-smoothing:antialiased; }
+  h1, h2, h3, p, ul { margin:0; }
+  ul { padding:0; }
+  h2 { font-size:19px; line-height:1.3; }
+  h3 { font-size:15px; }
+  a { color:var(--accent); }
+  button, input, select, textarea { font:inherit; color:inherit; }
+  :focus-visible { outline:3px solid var(--accent); outline-offset:2px; border-radius:6px; }
+  [hidden] { display:none !important; }
+  .so-leitor { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .pular { position:absolute; left:12px; top:-60px; background:var(--accent); color:var(--on-accent); padding:8px 14px; border-radius:8px; z-index:20; }
+  .pular:focus { top:12px; }
+
+  /* cabeçalho e navegação */
+  header { background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10; }
+  .topo { max-width:920px; margin:0 auto; padding:12px 16px 0; display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; }
+  .marca { display:flex; align-items:center; gap:10px; font-weight:650; font-size:18px; }
+  .marca svg { width:26px; height:26px; color:var(--accent); }
+  .selo { margin-left:auto; font-size:13px; color:var(--ok); background:var(--ok-soft); padding:3px 10px; border-radius:999px; display:inline-flex; gap:6px; align-items:center; }
+  nav { max-width:920px; margin:0 auto; padding:8px 8px 0; display:flex; gap:2px; overflow-x:auto; }
+  nav button { background:none; border:0; padding:10px 14px; min-height:44px; color:var(--muted); font-weight:550; cursor:pointer; border-bottom:3px solid transparent; border-radius:8px 8px 0 0; white-space:nowrap; }
+  nav button:hover { color:var(--text); background:var(--surface-2); }
+  nav button[aria-current="page"] { color:var(--accent); border-bottom-color:var(--accent); }
+  main { max-width:920px; margin:0 auto; padding:24px 16px 64px; }
+  .tela > * + * { margin-top:16px; }
+  .intro { color:var(--muted); max-width:62ch; }
+
+  /* cartões e formulários */
+  .cartao { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--sombra); }
+  .cartao > * + * { margin-top:14px; }
+  .passo { display:flex; align-items:center; gap:10px; }
+  .passo b { display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-size:14px; }
+  label.campo { display:block; font-weight:550; }
+  .campo small, .ajuda { color:var(--muted); font-weight:400; font-size:13px; }
+  input[type=text], input[type=search], textarea, select {
+    width:100%; min-height:44px; padding:9px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); margin-top:6px;
+  }
+  textarea { resize:vertical; }
+  input::placeholder, textarea::placeholder { color:var(--muted); opacity:.8; }
+
+  .botao { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:9px 18px; border-radius:10px; border:1px solid transparent; font-weight:600; cursor:pointer; text-decoration:none; }
+  .botao.principal { background:var(--accent); color:var(--on-accent); }
+  .botao.principal:hover:not(:disabled) { background:var(--accent-hover); }
+  .botao.secundario { background:var(--surface); border-color:var(--line); color:var(--text); }
+  .botao.secundario:hover:not(:disabled) { background:var(--surface-2); }
+  .botao.perigo { background:var(--surface); border-color:var(--err); color:var(--err); }
+  .botao.perigo.confirmar { background:var(--err); color:var(--surface); }
+  .botao.pequeno { min-height:36px; padding:5px 12px; font-size:14px; }
+  .botao:disabled { opacity:.5; cursor:not-allowed; }
+  .icone { width:36px; height:36px; display:inline-grid; place-items:center; border:0; background:none; border-radius:8px; color:var(--muted); cursor:pointer; font-size:18px; line-height:1; }
+  .icone:hover { background:var(--surface-2); color:var(--text); }
+  .linha { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+  .linha > .cresce { flex:1 1 240px; }
+
+  /* zona de soltar */
+  .soltar { display:block; border:2px dashed var(--line); border-radius:var(--radius); padding:28px 16px; text-align:center; cursor:pointer; background:var(--surface-2); transition:border-color .15s, background .15s; }
+  .soltar:hover, .soltar.sobre, .soltar:focus-within { border-color:var(--accent); background:var(--accent-soft); }
+  .soltar strong { display:block; font-size:16px; }
+  .soltar span { color:var(--muted); font-size:14px; }
+  .soltar svg { width:32px; height:32px; color:var(--accent); margin-bottom:6px; }
+
+  .arquivos { list-style:none; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .arquivos li { display:flex; align-items:center; gap:10px; padding:6px 6px 6px 12px; }
+  .arquivos li + li { border-top:1px solid var(--line); }
+  .arquivos .nome { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .arquivos .tam { color:var(--muted); font-size:13px; white-space:nowrap; }
+
+  .opcoes { display:flex; flex-wrap:wrap; gap:8px; }
+  .opcao { position:relative; }
+  .opcao input { position:absolute; opacity:0; inset:0; width:100%; height:100%; margin:0; cursor:pointer; }
+  .opcao span { display:flex; flex-direction:column; padding:8px 14px; border:1px solid var(--line); border-radius:10px; background:var(--bg); min-width:116px; }
+  .opcao span small { color:var(--muted); font-size:12px; }
+  .opcao input:checked + span { border-color:var(--accent); background:var(--accent-soft); }
+  .opcao input:checked + span b::before { content:"✓ "; color:var(--accent); }
+  .opcao input:focus-visible + span { outline:3px solid var(--accent); outline-offset:2px; }
+  .opcao input:disabled + span { opacity:.75; }
+  .alternar { display:flex; gap:12px; align-items:flex-start; padding:12px 14px; border:1px solid var(--line); border-radius:10px; background:var(--bg); }
+  .alternar input { width:20px; height:20px; margin-top:2px; accent-color:var(--accent); }
+  .alternar input:disabled ~ div { color:var(--muted); }
+  details { border-top:1px solid var(--line); padding-top:12px; }
+  summary { cursor:pointer; font-weight:550; min-height:32px; display:flex; align-items:center; gap:8px; list-style:none; }
+  summary::-webkit-details-marker { display:none; }
+  summary::before { content:"▸"; color:var(--accent); transition:transform .15s; }
+  details[open] > summary::before { transform:rotate(90deg); }
+
+  /* fila */
+  .envio { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--sombra); }
+  .envio > * + * { margin-top:12px; }
+  .envio-topo { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
+  .envio-topo h3 { flex:1 1 200px; }
+  .selo-estado { display:inline-flex; align-items:center; gap:6px; padding:3px 11px; border-radius:999px; font-size:13px; font-weight:600; background:var(--surface-2); color:var(--muted); }
+  .selo-estado.transcrevendo { background:var(--accent-soft); color:var(--accent); }
+  .selo-estado.concluído { background:var(--ok-soft); color:var(--ok); }
+  .selo-estado.erro { background:var(--err-soft); color:var(--err); }
+  .selo-estado.cancelado { background:var(--warn-soft); color:var(--warn); }
+  .barra { height:8px; border-radius:99px; background:var(--surface-2); overflow:hidden; }
+  .barra > i { display:block; height:100%; width:0; background:var(--accent); border-radius:99px; transition:width .4s ease; }
+  .barra.ativa > i { background-image:linear-gradient(45deg, rgba(255,255,255,.28) 25%, transparent 25% 50%, rgba(255,255,255,.28) 50% 75%, transparent 75%); background-size:18px 18px; animation:listras 1s linear infinite; }
+  @keyframes listras { to { background-position:18px 0; } }
+  .acoes { display:flex; flex-wrap:wrap; gap:8px; }
+  .previa { list-style:none; display:grid; gap:10px; }
+  .previa li { border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:var(--bg); }
+  .previa p { margin-top:4px; font-size:14px; white-space:pre-wrap; }
+  .meta { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; font-size:13px; color:var(--muted); }
+  .etiqueta { display:inline-block; padding:1px 9px; border-radius:99px; background:var(--accent-soft); color:var(--accent); font-weight:600; font-size:12.5px; }
+  .etiqueta.aviso { background:var(--warn-soft); color:var(--warn); }
+  .erro-caixa { border:1px solid var(--err); background:var(--err-soft); border-radius:10px; padding:10px 12px; color:var(--text); }
+  .erro-caixa details { border:0; padding:6px 0 0; }
+  .erro-caixa pre { margin:6px 0 0; white-space:pre-wrap; font:12.5px/1.45 var(--mono); }
+  .vazio { text-align:center; color:var(--muted); padding:28px 16px; border:1px dashed var(--line); border-radius:var(--radius); }
+  .vazio strong { display:block; color:var(--text); margin-bottom:4px; }
+
+  /* glossário */
+  .termos { display:flex; flex-wrap:wrap; gap:8px; list-style:none; }
+  .termo { display:inline-flex; align-items:center; gap:2px; padding:2px 4px 2px 12px; border:1px solid var(--line); border-radius:999px; background:var(--bg); font-size:14px; }
+  .termo .icone { width:28px; height:28px; font-size:16px; }
+
+  /* busca */
+  .achados { display:grid; gap:14px; }
+  .grupo h3 { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:baseline; }
+  .grupo h3 small { color:var(--muted); font-weight:400; }
+  .trechos { list-style:none; margin-top:8px; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--surface); }
+  .trechos li { padding:10px 12px; display:grid; grid-template-columns:auto 1fr; gap:4px 12px; align-items:baseline; }
+  .trechos li + li { border-top:1px solid var(--line); }
+  .hora { font:13px var(--mono); color:var(--muted); background:var(--surface-2); padding:1px 7px; border-radius:6px; }
+  mark { background:var(--warn-soft); color:inherit; border-radius:3px; padding:0 2px; box-shadow:0 0 0 1px var(--warn-soft); font-weight:600; }
+  .exemplos { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:10px; }
+  .chip-botao { border:1px solid var(--line); background:var(--surface); border-radius:99px; padding:4px 13px; cursor:pointer; min-height:34px; }
+  .chip-botao:hover { border-color:var(--accent); color:var(--accent); }
+
+  /* vozes */
+  .pessoas { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:12px; list-style:none; }
+  .pessoa { border:1px solid var(--line); border-radius:var(--radius); padding:14px; background:var(--surface); display:flex; gap:12px; align-items:center; }
+  .avatar { width:42px; height:42px; border-radius:50%; background:var(--accent-soft); color:var(--accent); display:grid; place-items:center; font-weight:700; font-size:18px; }
+  .comando { display:flex; gap:8px; align-items:center; background:var(--surface-2); border-radius:10px; padding:6px 6px 6px 12px; }
+  .comando code { flex:1; font:13px var(--mono); overflow-x:auto; white-space:nowrap; padding:6px 0; }
+
+  /* avisos */
+  #avisos { position:fixed; left:0; right:0; bottom:16px; display:grid; justify-items:center; gap:8px; padding:0 16px; pointer-events:none; z-index:30; }
+  .aviso-flutuante { pointer-events:auto; display:flex; gap:12px; align-items:center; background:var(--text); color:var(--bg); padding:10px 10px 10px 16px; border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,.28); max-width:520px; animation:entra .18s ease-out; }
+  .aviso-flutuante.erro { background:var(--err); color:#fff; }
+  .aviso-flutuante button { background:none; border:1px solid currentColor; border-radius:8px; color:inherit; padding:4px 12px; min-height:34px; cursor:pointer; font-weight:600; }
+  @keyframes entra { from { opacity:0; transform:translateY(8px); } }
+  #offline { background:var(--err-soft); color:var(--err); border-bottom:1px solid var(--err); text-align:center; padding:8px 16px; font-weight:600; }
+  footer { max-width:920px; margin:0 auto; padding:0 16px 32px; color:var(--muted); font-size:13px; }
+  .girando { width:16px; height:16px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:gira .7s linear infinite; }
+  @keyframes gira { to { transform:rotate(360deg); } }
+  @media (max-width:560px) { .trechos li { grid-template-columns:1fr; } main { padding-top:16px; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
+</style>
+</head>
+<body>
+<a class="pular" href="#conteudo">Pular para o conteúdo</a>
+<header>
+  <div class="topo">
+    <div class="marca">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+      Transcritor
+    </div>
+    <span class="selo" title="Nada é enviado para a internet">● 100% neste computador</span>
+  </div>
+  <nav aria-label="Seções">
+    <button type="button" data-tela="transcrever">Transcrever</button>
+    <button type="button" data-tela="buscar">Buscar</button>
+    <button type="button" data-tela="glossario">Glossário</button>
+    <button type="button" data-tela="vozes">Vozes</button>
+  </nav>
+</header>
+<div id="offline" role="alert" hidden>Perdi a conexão com o Transcritor. Ele ainda está aberto no terminal? Vou tentar de novo sozinho.</div>
+
+<main id="conteudo" tabindex="-1">
+
+  <!-- TRANSCREVER -->
+  <section class="tela" id="tela-transcrever" aria-labelledby="t-transcrever">
+    <div>
+      <h2 id="t-transcrever">Transcrever áudios</h2>
+      <p class="intro">Escolha os áudios, confira as opções e clique em Transcrever. Os envios rodam um de cada vez; você pode sair desta tela e voltar depois.</p>
+    </div>
+
+    <form class="cartao" id="form-envio" novalidate>
+      <div class="passo"><b>1</b><h3>Escolha os áudios</h3></div>
+      <label class="soltar" id="soltar">
+        <input id="arquivos" class="so-leitor" type="file" multiple accept="audio/*,video/*,.ogg,.opus,.m4a,.amr,.mp3,.wav,.aac,.flac,.wma,.mp4,.webm,.mkv">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path></svg>
+        <strong>Arraste os áudios para cá ou clique para escolher</strong>
+        <span>WhatsApp (.ogg, .opus), .mp3, .m4a, .wav, vídeo e outros</span>
+      </label>
+      <ul class="arquivos" id="lista-arquivos" hidden></ul>
+      <div class="linha" id="resumo-arquivos" hidden>
+        <p class="ajuda cresce" id="total-arquivos"></p>
+        <button type="button" class="botao secundario pequeno" id="limpar-arquivos">Remover todos</button>
+      </div>
+
+      <div class="passo"><b>2</b><h3>Escolha os formatos</h3></div>
+      <div class="opcoes" role="group" aria-label="Formatos de saída" id="formatos"></div>
+
+      <div class="passo"><b>3</b><h3>Opções</h3></div>
+      <label class="alternar" for="falantes">
+        <input type="checkbox" id="falantes" disabled>
+        <div><strong>Identificar quem fala</strong><br><span class="ajuda" id="ajuda-falantes">Verificando as vozes cadastradas…</span></div>
+      </label>
+      <details>
+        <summary>Mais opções: termos extras só para este envio</summary>
+        <label class="campo" for="termos" style="margin-top:10px">Um termo por linha <small>(nomes, siglas, times… o que o Whisper costuma errar)</small>
+          <textarea id="termos" rows="3" placeholder="Ex.: Lamine Yamal"></textarea>
+        </label>
+        <p class="ajuda" style="margin-top:6px">Para guardar termos de forma permanente, use a aba Glossário.</p>
+      </details>
+
+      <div class="linha">
+        <button type="submit" class="botao principal" id="enviar" disabled>Transcrever</button>
+        <span class="ajuda" id="estado-envio" role="status" aria-live="polite">Escolha ao menos um áudio. Atalho: Ctrl+Enter.</span>
+      </div>
+      <div class="barra" id="barra-envio" hidden><i></i></div>
+    </form>
+
+    <div>
+      <h2 id="t-fila">Seus envios</h2>
+      <p class="ajuda">A lista é do que foi enviado desde que o Transcritor abriu. Os textos prontos ficam na busca mesmo depois de fechar.</p>
+    </div>
+    <div id="fila" class="tela" aria-live="polite" aria-labelledby="t-fila"></div>
+    <div class="vazio" id="fila-vazia"><strong>Nenhum envio ainda</strong>Depois de transcrever, o andamento aparece aqui.</div>
+  </section>
+
+  <!-- BUSCAR -->
+  <section class="tela" id="tela-buscar" aria-labelledby="t-buscar" hidden>
+    <div>
+      <h2 id="t-buscar">Buscar nas transcrições</h2>
+      <p class="intro">Procura em todos os áudios já transcritos, sem diferenciar acentos nem maiúsculas.</p>
+    </div>
+    <form class="cartao" id="form-busca" role="search">
+      <div class="linha">
+        <label class="campo cresce" for="consulta">O que você procura?
+          <input id="consulta" type="search" placeholder="Ex.: cartão SD corrompido" autocomplete="off">
+        </label>
+        <label class="campo" for="filtro-falante" id="rotulo-falante" hidden>Quem falou
+          <select id="filtro-falante"><option value="">Qualquer pessoa</option></select>
+        </label>
+        <button type="submit" class="botao principal" id="buscar">Buscar</button>
+      </div>
+      <p class="ajuda">Dica: aperte <kbd>/</kbd> em qualquer tela para ir direto para a busca.</p>
+    </form>
+    <p id="resumo-busca" class="meta" role="status" aria-live="polite"></p>
+    <div id="achados" class="achados"></div>
+    <div class="vazio" id="busca-inicial"><strong>Ainda não buscou nada</strong>Experimente um destes:
+      <div class="exemplos" id="exemplos"></div>
+    </div>
+  </section>
+
+  <!-- GLOSSÁRIO -->
+  <section class="tela" id="tela-glossario" aria-labelledby="t-glossario" hidden>
+    <div>
+      <h2 id="t-glossario">Glossário</h2>
+      <p class="intro">Nomes, siglas e termos que o Whisper costuma errar. Eles são passados como dica em toda transcrição e ficam salvos para as próximas.</p>
+    </div>
+    <form class="cartao" id="form-termo">
+      <div class="linha">
+        <label class="campo cresce" for="novo-termo">Novo termo
+          <input id="novo-termo" type="text" placeholder="Ex.: Fermín López" autocomplete="off">
+        </label>
+        <button type="submit" class="botao principal">Adicionar</button>
+      </div>
+    </form>
+    <div class="cartao">
+      <div class="linha" style="align-items:center">
+        <h3 class="cresce" id="contagem-termos">Termos</h3>
+        <input id="filtro-termos" type="search" placeholder="Filtrar termos" aria-label="Filtrar termos" style="max-width:240px;margin:0" hidden>
+      </div>
+      <ul class="termos" id="termos-lista"></ul>
+      <p class="ajuda" id="termos-vazio" hidden>Nenhum termo corresponde ao filtro.</p>
+    </div>
+  </section>
+
+  <!-- VOZES -->
+  <section class="tela" id="tela-vozes" aria-labelledby="t-vozes" hidden>
+    <div>
+      <h2 id="t-vozes">Vozes</h2>
+      <p class="intro">O Transcritor compara a voz de cada áudio com as pessoas cadastradas e anota quem está falando. Se a voz não for parecida com ninguém, o áudio fica como "desconhecido" em vez de receber um nome errado.</p>
+    </div>
+    <div class="cartao">
+      <h3>Pessoas cadastradas</h3>
+      <div id="estado-vozes" class="ajuda" role="status">Carregando…</div>
+      <ul class="pessoas" id="pessoas"></ul>
+    </div>
+    <div class="cartao">
+      <h3>Como cadastrar uma pessoa</h3>
+      <p class="ajuda">Use alguns áudios só dela (cinco ou mais ajudam). Rode no terminal:</p>
+      <div class="comando"><code>transcritor vozes baixar-modelo</code><button type="button" class="botao secundario pequeno" data-copiar="transcritor vozes baixar-modelo">Copiar</button></div>
+      <div class="comando"><code>transcritor vozes cadastrar Nome pasta_com_audios</code><button type="button" class="botao secundario pequeno" data-copiar="transcritor vozes cadastrar Nome pasta_com_audios">Copiar</button></div>
+      <p class="ajuda">Depois de cadastrar, atualize esta página: a opção "Identificar quem fala" é liberada na aba Transcrever.</p>
+    </div>
+  </section>
+</main>
+<footer>Transcritor roda só neste computador (127.0.0.1) e não tem login: não deixe exposto na internet.</footer>
+<div id="avisos" aria-live="polite" role="status"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+/* ---------- utilidades ---------- */
+function h(tag, atributos, ...filhos) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(atributos || {})) {
+    if (v === false || v == null) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const f of filhos.flat()) if (f != null && f !== false) el.append(f.nodeType ? f : document.createTextNode(String(f)));
+  return el;
+}
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+function tamanho(bytes) {
+  if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + " KB";
+  return (bytes / 1024 / 1024).toFixed(1).replace(".", ",") + " MB";
+}
+function hora(segundos) {
+  const s = Math.floor(segundos);
+  return [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map((n) => String(n).padStart(2, "0")).join(":");
+}
+function semAcento(texto) { return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
+
+function aviso(texto, { erro = false, acao = null, ms = 5000 } = {}) {
+  const caixa = h("div", { class: "aviso-flutuante" + (erro ? " erro" : "") }, h("span", {}, texto));
+  const fechar = () => caixa.remove();
+  if (acao) caixa.append(h("button", { type: "button", onclick: () => { fechar(); acao.fazer(); } }, acao.rotulo));
+  $("avisos").append(caixa);
+  setTimeout(fechar, acao ? Math.max(ms, 8000) : ms);
+}
+
+async function api(url, opcoes) {
+  let resp;
+  try { resp = await fetch(url, opcoes); }
+  catch { throw new Error("Não consegui falar com o Transcritor. Ele ainda está aberto no terminal?"); }
+  if (!resp.ok) {
+    const corpo = await resp.json().catch(() => ({}));
+    throw new Error(typeof corpo.detail === "string" ? corpo.detail : `O Transcritor respondeu com um erro (${resp.status}).`);
+  }
+  return resp.json();
+}
+
+/* ---------- navegação ---------- */
+const TELAS = ["transcrever", "buscar", "glossario", "vozes"];
+function irPara(tela, { foco = false } = {}) {
+  if (!TELAS.includes(tela)) tela = "transcrever";
+  for (const t of TELAS) $("tela-" + t).hidden = t !== tela;
+  document.querySelectorAll("nav button").forEach((b) => {
+    if (b.dataset.tela === tela) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  if (location.hash !== "#" + tela) history.replaceState(null, "", "#" + tela);
+  if (tela === "glossario") carregarGlossario();
+  if (tela === "vozes") carregarVozes();
+  if (foco) $("tela-" + tela).querySelector("h2").scrollIntoView();
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => irPara(b.dataset.tela, { foco: true })));
+window.addEventListener("hashchange", () => irPara(location.hash.slice(1)));
+document.addEventListener("keydown", (e) => {
+  const digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if (e.key === "/" && !digitando && !e.ctrlKey && !e.metaKey) { e.preventDefault(); irPara("buscar"); $("consulta").focus(); }
+});
+
+/* ---------- transcrever: escolha dos arquivos ---------- */
+const FORMATOS = [
+  { id: "txt", nome: "Texto", desc: "com horários" },
+  { id: "md", nome: "Markdown", desc: "para notas" },
+  { id: "json", nome: "JSON", desc: "usado pela busca", fixo: true },
+  { id: "srt", nome: "Legenda SRT", desc: "para vídeo" },
+  { id: "vtt", nome: "Legenda VTT", desc: "para a web" },
+];
+const EXTENSOES = new Set([".ogg", ".opus", ".m4a", ".amr", ".mp3", ".wav", ".aac", ".flac", ".wma", ".mp4", ".webm", ".mkv", ".mov", ".3gp", ".oga"]);
+let escolhidos = [];
+let enviando = false;
+
+for (const f of FORMATOS) {
+  const marcado = ["txt", "md", "json"].includes(f.id);
+  $("formatos").append(h("label", { class: "opcao" },
+    h("input", { type: "checkbox", value: f.id, checked: marcado, disabled: f.fixo }),
+    h("span", {}, h("b", {}, f.nome), h("small", {}, f.desc))));
+}
+
+function adicionarArquivos(lista) {
+  const novos = [], recusados = [];
+  for (const arq of lista) {
+    const ext = arq.name.slice(arq.name.lastIndexOf(".")).toLowerCase();
+    if (!EXTENSOES.has(ext)) { recusados.push(arq.name); continue; }
+    if (escolhidos.some((e) => e.name === arq.name && e.size === arq.size)) continue;
+    novos.push(arq);
+  }
+  escolhidos = escolhidos.concat(novos);
+  if (recusados.length) aviso(`Não aceito este tipo de arquivo: ${recusados.slice(0, 3).join(", ")}${recusados.length > 3 ? "…" : ""}`, { erro: true });
+  desenharArquivos();
+}
+function desenharArquivos() {
+  const ul = $("lista-arquivos"); ul.textContent = "";
+  escolhidos.forEach((arq, i) => ul.append(h("li", {},
+    h("span", { class: "nome", title: arq.name }, arq.name),
+    h("span", { class: "tam" }, tamanho(arq.size)),
+    h("button", { type: "button", class: "icone", "aria-label": `Remover ${arq.name}`, onclick: () => { escolhidos.splice(i, 1); desenharArquivos(); $("arquivos").focus(); } }, "×"))));
+  const ha = escolhidos.length > 0;
+  ul.hidden = !ha; $("resumo-arquivos").hidden = !ha;
+  const bytes = escolhidos.reduce((s, a) => s + a.size, 0);
+  $("total-arquivos").textContent = `${plural(escolhidos.length, "áudio", "áudios")} · ${tamanho(bytes)}`;
+  $("enviar").disabled = !ha || enviando;
+  $("enviar").textContent = ha ? `Transcrever ${plural(escolhidos.length, "áudio", "áudios")}` : "Transcrever";
+  if (!enviando) $("estado-envio").textContent = ha ? "Pronto para enviar. Atalho: Ctrl+Enter." : "Escolha ao menos um áudio. Atalho: Ctrl+Enter.";
+}
+$("arquivos").addEventListener("change", (e) => { adicionarArquivos([...e.target.files]); e.target.value = ""; });
+$("limpar-arquivos").addEventListener("click", () => { escolhidos = []; desenharArquivos(); });
+const zona = $("soltar");
+zona.addEventListener("dragover", (e) => { e.preventDefault(); zona.classList.add("sobre"); });
+zona.addEventListener("dragleave", () => zona.classList.remove("sobre"));
+zona.addEventListener("drop", (e) => { e.preventDefault(); zona.classList.remove("sobre"); adicionarArquivos([...e.dataTransfer.files]); });
+// soltar fora da zona não deve abrir o arquivo no navegador
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => e.preventDefault());
+
+function enviarComProgresso(dados, aoProgredir) {
+  return new Promise((ok, falha) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", "/enviar");
+    x.upload.onprogress = (e) => { if (e.lengthComputable) aoProgredir(e.loaded / e.total); };
+    x.onload = () => {
+      let corpo = {}; try { corpo = JSON.parse(x.responseText); } catch { /* resposta sem JSON */ }
+      if (x.status >= 200 && x.status < 300) ok(corpo);
+      else falha(new Error(typeof corpo.detail === "string" ? corpo.detail : `O Transcritor recusou o envio (erro ${x.status}).`));
+    };
+    x.onerror = () => falha(new Error("Não consegui falar com o Transcritor. Ele ainda está aberto no terminal?"));
+    x.send(dados);
+  });
+}
+
+$("form-envio").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!escolhidos.length || enviando) return;
+  const formatos = [...document.querySelectorAll("#formatos input:checked")].map((i) => i.value);
+  const dados = new FormData();
+  escolhidos.forEach((f) => dados.append("arquivos", f));
+  dados.append("formatos", formatos.join(","));
+  dados.append("termos", $("termos").value);
+  dados.append("falantes", $("falantes").checked ? "true" : "false");
+  enviando = true; $("enviar").disabled = true; $("barra-envio").hidden = false;
+  const preenchimento = $("barra-envio").firstElementChild;
+  try {
+    await enviarComProgresso(dados, (p) => {
+      preenchimento.style.width = Math.round(p * 100) + "%";
+      $("estado-envio").textContent = p < 1 ? `Enviando… ${Math.round(p * 100)}%` : "Enviado. Preparando a transcrição…";
+    });
+    aviso("Enviado! Acompanhe o andamento abaixo.");
+    escolhidos = []; $("termos").value = "";
+    await atualizarFila();
+    $("fila").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (erro) {
+    aviso(erro.message, { erro: true, ms: 9000 });
+    $("estado-envio").textContent = "Não foi enviado. Seus arquivos continuam na lista; tente de novo.";
+  } finally {
+    enviando = false; $("barra-envio").hidden = true; preenchimento.style.width = "0";
+    desenharArquivos();
+  }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !$("tela-transcrever").hidden) $("form-envio").requestSubmit(); });
+
+/* ---------- transcrever: fila ---------- */
+const ROTULO = { "na fila": ["Na fila", "○"], "transcrevendo": ["Transcrevendo", "◐"], "concluído": ["Pronto", "✓"], "cancelado": ["Cancelado", "–"], "erro": ["Deu erro", "!"] };
+const cartoes = new Map();
+let jobs = [], temporizador = null;
+
+function mensagemDeErro(texto) {
+  if (/cuda|cublas|cudnn|gpu/i.test(texto)) return "A placa de vídeo não respondeu. Feche outros programas que usam a GPU e envie de novo.";
+  if (/modelo de voz|baixar-modelo/i.test(texto)) return "Falta o modelo de voz. Rode no terminal: transcritor vozes baixar-modelo";
+  return "Não consegui transcrever este envio. Tente enviar de novo; se repetir, veja o detalhe técnico.";
+}
+
+function criarCartao(j) {
+  const r = {};
+  r.estado = h("span", { class: "selo-estado" });
+  r.titulo = h("h3");
+  r.barra = h("div", { class: "barra", role: "progressbar", "aria-label": "Andamento do envio", "aria-valuemin": "0" }, h("i"));
+  r.detalhe = h("p", { class: "meta" });
+  r.erro = h("div", { class: "erro-caixa", role: "alert", hidden: true });
+  r.acoes = h("div", { class: "acoes" });
+  r.previa = h("ul", { class: "previa", hidden: true });
+  r.raiz = h("article", { class: "envio" }, h("div", { class: "envio-topo" }, r.titulo, r.estado), r.barra, r.detalhe, r.erro, r.acoes, r.previa);
+  r.aberta = false; r.confirmando = false;
+  return r;
+}
+
+function desenharCartao(r, j) {
+  const [rotulo, icone] = ROTULO[j.status] || [j.status, "•"];
+  r.estado.className = "selo-estado " + j.status; r.estado.textContent = `${icone} ${rotulo}`;
+  const quando = new Date(j.criado_em * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  r.titulo.textContent = `${plural(j.total, "áudio", "áudios")} · enviado às ${quando}`;
+  const pct = j.total ? Math.round((j.feitos / j.total) * 100) : 0;
+  r.barra.firstElementChild.style.width = pct + "%";
+  r.barra.setAttribute("aria-valuemax", j.total); r.barra.setAttribute("aria-valuenow", j.feitos);
+  r.barra.classList.toggle("ativa", j.status === "transcrevendo");
+  r.barra.hidden = j.status === "erro" || j.status === "cancelado" && !j.feitos;
+
+  const partes = [`${j.feitos} de ${j.total} prontos`];
+  if (j.status === "transcrevendo" && j.atual) partes.push(`agora: ${j.atual}`);
+  if (j.status === "na fila") partes.push("aguardando a vez");
+  if (j.falantes) partes.push("com identificação de voz");
+  r.detalhe.textContent = partes.join(" · ");
+
+  r.erro.hidden = j.status !== "erro";
+  if (j.status === "erro") {
+    r.erro.textContent = "";
+    r.erro.append(h("strong", {}, mensagemDeErro(j.erro)), h("details", {}, h("summary", {}, "Detalhe técnico"), h("pre", {}, j.erro)));
+  }
+
+  r.acoes.textContent = "";
+  const andamento = j.status === "na fila" || j.status === "transcrevendo";
+  if (andamento) {
+    const b = h("button", { type: "button", class: "botao perigo pequeno" + (r.confirmando ? " confirmar" : "") }, r.confirmando ? "Confirmar cancelamento" : "Cancelar");
+    b.addEventListener("click", async () => {
+      if (!r.confirmando) {
+        r.confirmando = true; desenharCartao(r, j);
+        setTimeout(() => { r.confirmando = false; desenharCartao(r, jobs.find((x) => x.id === j.id) || j); }, 4000);
+        return;
+      }
+      r.confirmando = false;
+      try { await api(`/api/fila/${j.id}/cancelar`, { method: "POST" }); aviso(j.status === "transcrevendo" ? "Cancelando depois do áudio atual." : "Envio cancelado."); atualizarFila(); }
+      catch (erro) { aviso(erro.message, { erro: true }); }
+    });
+    r.acoes.append(b);
+  }
+  if (j.feitos > 0) {
+    r.acoes.append(
+      h("button", { type: "button", class: "botao secundario pequeno", "aria-expanded": String(r.aberta), onclick: () => alternarPrevia(r, j) }, r.aberta ? "Esconder prévia" : "Ver prévia"),
+      h("a", { class: "botao principal pequeno", href: "/resultado/" + j.id, download: "" }, j.status === "concluído" ? "Baixar .zip" : "Baixar o que ficou pronto"));
+  }
+  if (j.status === "concluído" && !r.avisouConclusao && r.viuAndamento) {
+    r.avisouConclusao = true; aviso("Transcrição pronta!");
+  }
+  if (andamento) r.viuAndamento = true;
+}
+
+async function alternarPrevia(r, j) {
+  r.aberta = !r.aberta;
+  if (r.aberta) await carregarPrevia(r, j);
+  r.previa.hidden = !r.aberta; desenharCartao(r, j);
+}
+async function carregarPrevia(r, j) {
+  try {
+    const itens = await api(`/api/fila/${j.id}/previa`);
+    r.previa.textContent = "";
+    if (!itens.length) r.previa.append(h("li", {}, "Ainda não há texto pronto."));
+    for (const it of itens) r.previa.append(h("li", {},
+      h("div", { class: "meta" }, h("strong", {}, it.arquivo), it.falante ? h("span", { class: "etiqueta" }, it.falante) : null,
+        h("span", {}, hora(it.duracao_s)), it.alertas ? h("span", { class: "etiqueta aviso" }, plural(it.alertas, "alerta", "alertas")) : null),
+      h("p", {}, it.trecho)));
+  } catch (erro) { aviso(erro.message, { erro: true }); r.aberta = false; }
+}
+
+function desenharFila() {
+  const caixa = $("fila");
+  const ids = new Set(jobs.map((j) => j.id));
+  for (const [id, r] of cartoes) if (!ids.has(id)) { r.raiz.remove(); cartoes.delete(id); }
+  jobs.forEach((j, i) => {
+    let r = cartoes.get(j.id);
+    if (!r) { r = criarCartao(j); cartoes.set(j.id, r); }
+    desenharCartao(r, j);
+    if (caixa.children[i] !== r.raiz) caixa.insertBefore(r.raiz, caixa.children[i] || null);
+    if (r.aberta && j.status === "transcrevendo") carregarPrevia(r, j);
+  });
+  $("fila-vazia").hidden = jobs.length > 0;
+}
+
+async function atualizarFila() {
+  try { jobs = await api("/api/fila"); $("offline").hidden = true; desenharFila(); }
+  catch { $("offline").hidden = false; }
+  clearTimeout(temporizador);
+  const ativo = jobs.some((j) => j.status === "na fila" || j.status === "transcrevendo");
+  temporizador = setTimeout(atualizarFila, document.hidden ? 10000 : ativo ? 1500 : 6000);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) atualizarFila(); });
+
+/* ---------- vozes ---------- */
+let vozes = { disponivel: false, modelo_baixado: false, pessoas: [] };
+async function carregarVozes() {
+  try { vozes = await api("/api/vozes"); } catch { vozes = { disponivel: false, modelo_baixado: false, pessoas: [] }; }
+  const lista = $("pessoas"); lista.textContent = "";
+  for (const p of vozes.pessoas) lista.append(h("li", { class: "pessoa" },
+    h("div", { class: "avatar", "aria-hidden": "true" }, p.nome.slice(0, 1).toUpperCase()),
+    h("div", {}, h("strong", {}, p.nome), h("br"), h("span", { class: "ajuda" }, plural(p.amostras, "áudio cadastrado", "áudios cadastrados")))));
+  $("estado-vozes").textContent = vozes.disponivel
+    ? `Identificação pronta com ${plural(vozes.pessoas.length, "pessoa", "pessoas")}.`
+    : !vozes.modelo_baixado ? "O modelo de voz ainda não foi baixado. Veja os comandos abaixo."
+    : "O modelo está instalado, mas ninguém foi cadastrado ainda.";
+  const alt = $("falantes");
+  alt.disabled = !vozes.disponivel;
+  if (!vozes.disponivel) alt.checked = false;
+  $("ajuda-falantes").textContent = vozes.disponivel
+    ? `Anota quem fala em cada áudio. Pessoas cadastradas: ${vozes.pessoas.map((p) => p.nome).join(", ")}.`
+    : "Indisponível: cadastre vozes na aba Vozes primeiro.";
+  const sel = $("filtro-falante"), atual = sel.value;
+  sel.length = 1;
+  for (const p of vozes.pessoas) sel.append(h("option", { value: p.nome }, p.nome));
+  sel.value = atual;
+  $("rotulo-falante").hidden = vozes.pessoas.length === 0;
+}
+document.querySelectorAll("[data-copiar]").forEach((b) => b.addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(b.dataset.copiar); aviso("Comando copiado."); }
+  catch { aviso("Não consegui copiar. Selecione o texto e use Ctrl+C.", { erro: true }); }
+}));
+
+/* ---------- glossário ---------- */
+let termos = [];
+async function carregarGlossario() {
+  try { termos = await api("/api/glossario"); desenharTermos(); }
+  catch (erro) { aviso(erro.message, { erro: true }); }
+}
+function desenharTermos() {
+  const filtro = semAcento($("filtro-termos").value.trim());
+  const ul = $("termos-lista"); ul.textContent = "";
+  const visiveis = termos.filter((t) => semAcento(t).includes(filtro));
+  for (const t of visiveis) ul.append(h("li", { class: "termo" }, t,
+    h("button", { type: "button", class: "icone", "aria-label": `Remover o termo ${t}`, onclick: () => removerTermo(t) }, "×")));
+  $("contagem-termos").textContent = `${plural(termos.length, "termo", "termos")} no glossário`;
+  $("filtro-termos").hidden = termos.length < 15;
+  $("termos-vazio").hidden = visiveis.length > 0 || termos.length === 0;
+}
+$("filtro-termos").addEventListener("input", desenharTermos);
+async function guardarTermo(termo) {
+  const dados = new FormData(); dados.append("termo", termo);
+  return api("/api/glossario", { method: "POST", body: dados });
+}
+async function removerTermo(termo) {
+  try {
+    await api("/api/glossario?termo=" + encodeURIComponent(termo), { method: "DELETE" });
+    await carregarGlossario();
+    aviso(`"${termo}" saiu do glossário.`, { acao: { rotulo: "Desfazer", fazer: async () => { try { await guardarTermo(termo); await carregarGlossario(); } catch (erro) { aviso(erro.message, { erro: true }); } } } });
+  } catch (erro) { aviso(erro.message, { erro: true }); }
+}
+$("form-termo").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const termo = $("novo-termo").value.trim();
+  if (!termo) { aviso("Digite o termo antes de adicionar.", { erro: true }); $("novo-termo").focus(); return; }
+  try {
+    const { adicionado } = await guardarTermo(termo);
+    aviso(adicionado ? `"${termo}" adicionado.` : `"${termo}" já estava no glossário.`);
+    $("novo-termo").value = ""; await carregarGlossario(); $("novo-termo").focus();
+  } catch (erro) { aviso(erro.message, { erro: true }); }
+});
+
+/* ---------- busca ---------- */
+const EXEMPLOS = ["SD corrompido", "software", "hipótese", "Davi"];
+EXEMPLOS.forEach((t) => $("exemplos").append(h("button", { type: "button", class: "chip-botao", onclick: () => { $("consulta").value = t; $("form-busca").requestSubmit(); } }, t)));
+
+function destacar(texto, consulta) {
+  const palavras = semAcento(consulta).split(/\s+/).filter((p) => p.length > 1);
+  const base = semAcento(texto);   // mesmo tamanho do original para letras acentuadas pré-compostas
+  const marcas = [];
+  for (const p of palavras) { let i = base.indexOf(p); while (i !== -1) { marcas.push([i, i + p.length]); i = base.indexOf(p, i + p.length); } }
+  marcas.sort((a, b) => a[0] - b[0]);
+  const fundidas = [];
+  for (const m of marcas) { const ult = fundidas[fundidas.length - 1]; if (ult && m[0] <= ult[1]) ult[1] = Math.max(ult[1], m[1]); else fundidas.push(m); }
+  const nos = []; let pos = 0;
+  if (base.length !== texto.length) return [texto];   // se a normalização mudou o tamanho, mostra sem destaque
+  for (const [a, b] of fundidas) { nos.push(texto.slice(pos, a), h("mark", {}, texto.slice(a, b))); pos = b; }
+  nos.push(texto.slice(pos));
+  return nos;
+}
+
+$("form-busca").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const consulta = $("consulta").value.trim();
+  if (!consulta) { $("consulta").focus(); aviso("Digite o que você quer procurar.", { erro: true }); return; }
+  const botao = $("buscar"); botao.disabled = true; botao.textContent = "Buscando…";
+  $("resumo-busca").textContent = "Buscando…";
+  try {
+    const falante = $("filtro-falante").value;
+    const achados = await api(`/api/buscar?q=${encodeURIComponent(consulta)}&limite=50` + (falante ? `&falante=${encodeURIComponent(falante)}` : ""));
+    desenharAchados(achados, consulta, falante);
+  } catch (erro) { $("resumo-busca").textContent = ""; aviso(erro.message, { erro: true }); }
+  finally { botao.disabled = false; botao.textContent = "Buscar"; }
+});
+
+function desenharAchados(achados, consulta, falante) {
+  const caixa = $("achados"); caixa.textContent = "";
+  $("busca-inicial").hidden = true;
+  if (!achados.length) {
+    $("resumo-busca").textContent = "";
+    caixa.append(h("div", { class: "vazio" }, h("strong", {}, `Nada encontrado para "${consulta}"`),
+      "Tente uma palavra só, confira a grafia", falante ? ` ou escolha "Qualquer pessoa" em vez de ${falante}.` : ", ou transcreva mais áudios."));
+    return;
+  }
+  const grupos = new Map();
+  for (const a of achados) { if (!grupos.has(a.arquivo)) grupos.set(a.arquivo, []); grupos.get(a.arquivo).push(a); }
+  $("resumo-busca").textContent = `${plural(achados.length, "trecho", "trechos")} em ${plural(grupos.size, "áudio", "áudios")}` + (achados.length >= 50 ? " (mostrando os 50 primeiros; refine a busca)" : "");
+  for (const [arquivo, itens] of grupos) {
+    itens.sort((a, b) => a.inicio - b.inicio);   // a busca devolve por relevância; dentro do áudio, na ordem da fala
+    caixa.append(h("section", { class: "grupo" },
+      h("h3", {}, arquivo, h("small", {}, plural(itens.length, "trecho", "trechos"))),
+      h("ul", { class: "trechos" }, itens.map((a) => h("li", {},
+        h("span", { class: "hora" }, hora(a.inicio)),
+        h("span", {}, a.falante ? h("span", { class: "etiqueta" }, a.falante) : null, a.falante ? " " : null, destacar(a.texto, consulta)))))));
+  }
+}
+
+/* ---------- início ---------- */
+irPara(location.hash.slice(1));
+desenharArquivos();
+carregarVozes();
+atualizarFila();
+</script>
+</body>
+</html>
